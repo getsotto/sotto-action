@@ -1,0 +1,45 @@
+name: "Sotto Setup"
+description: "Install the Sotto CLI (end-to-end encrypted secret sync for developer teams)"
+author: "getsotto"
+branding:
+  icon: "lock"
+  color: "purple"
+
+inputs:
+  sotto-version:
+    description: >
+      The sotto release to install, e.g. "v0.3.0". Required - there is no implicit "latest", so a
+      new Sotto release can never silently change your CI's behaviour.
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Require sotto-version
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.sotto-version }}" ]; then
+          echo "::error::sotto-version is required, e.g. sotto-version: v0.3.0 - there is no implicit \"latest\" (see getsotto/sotto's install.sh/install.ps1, which this action wraps)" >&2
+          exit 1
+        fi
+
+    - name: Install sotto (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        SOTTO_VERSION: ${{ inputs.sotto-version }}
+        SOTTO_INSTALL_DIR: ${{ runner.temp }}/sotto-bin
+      run: |
+        set -euo pipefail
+        curl -fsSL https://raw.githubusercontent.com/getsotto/sotto/main/install.sh | sh
+        echo "$SOTTO_INSTALL_DIR" >>"$GITHUB_PATH"
+
+    - name: Install sotto (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        SOTTO_VERSION: ${{ inputs.sotto-version }}
+        SOTTO_INSTALL_DIR: ${{ runner.temp }}\sotto-bin
+      run: |
+        irm https://raw.githubusercontent.com/getsotto/sotto/main/install.ps1 | iex
+        Add-Content -Path $env:GITHUB_PATH -Value $env:SOTTO_INSTALL_DIR

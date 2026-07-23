@@ -1,0 +1,33 @@
+# Exercises the action itself (this repo's whole reason to exist) across every runner OS it
+# claims to support. Pinned to a real getsotto/sotto tag rather than "latest" - matches the
+# action's own no-implicit-latest posture.
+#
+# NOTE: v0.3.0 predates Windows/Linux-ARM support in getsotto/sotto (merged to main, not yet in a
+# tagged release). The windows-latest leg below is expected to fail until a new sotto release
+# ships a Windows artifact - that's an external gap, not a defect in this action. Bump
+# SOTTO_VERSION once a Windows-capable release exists.
+
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  install-and-verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          sotto-version: v0.3.0
+      - name: sotto --version reports the pinned version
+        shell: bash
+        run: |
+          set -euo pipefail
+          sotto --version
