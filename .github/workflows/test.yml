@@ -2,10 +2,9 @@
 # claims to support. Pinned to a real getsotto/sotto tag rather than "latest" - matches the
 # action's own no-implicit-latest posture.
 #
-# NOTE: v0.3.0 predates Windows/Linux-ARM support in getsotto/sotto (merged to main, not yet in a
-# tagged release). The windows-latest leg below is expected to fail until a new sotto release
-# ships a Windows artifact - that's an external gap, not a defect in this action. Bump
-# SOTTO_TEST_VERSION once a Windows-capable release exists.
+# v0.4.0 is the first getsotto/sotto release with Windows and Linux ARM64 artifacts (v0.3.0 and
+# earlier predate that work), so this is also the first version this test can actually pass
+# against on windows-latest.
 
 name: test
 
@@ -15,7 +14,7 @@ on:
   pull_request:
 
 env:
-  SOTTO_TEST_VERSION: v0.3.0
+  SOTTO_TEST_VERSION: v0.4.0
 
 jobs:
   install-and-verify:
