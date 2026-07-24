@@ -3,7 +3,7 @@ description: "Install the Sotto CLI (end-to-end encrypted secret sync for develo
 author: "getsotto"
 branding:
   icon: "lock"
-  color: "purple"
+  color: "black"
 
 inputs:
   sotto-version:
