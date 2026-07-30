@@ -1,7 +1,9 @@
-# Exercises the action itself (this repo's whole reason to exist) across every runner OS it
-# claims to support. Pinned to a real getsotto/sotto tag rather than "latest" - matches the
-# action's own no-implicit-latest posture.
+# Exercises the action itself (this repo's whole reason to exist) across every release target it
+# supports. macos-latest is ARM64, so macos-15-intel covers the separate x86_64 release; likewise,
+# ubuntu-24.04-arm covers Linux ARM64 alongside the default x86_64 Ubuntu runner.
 #
+# The test is pinned to a real getsotto/sotto tag rather than "latest", matching the action's own
+# no-implicit-latest posture.
 # v0.4.0 is the first getsotto/sotto release with Windows and Linux ARM64 artifacts (v0.3.0 and
 # earlier predate that work), so this is also the first version this test can actually pass
 # against on windows-latest.

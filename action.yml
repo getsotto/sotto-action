@@ -13,6 +13,7 @@ inputs:
     required: true
 
 outputs:
+  # Exactly one platform install step runs. Select the output from whichever step was not skipped.
   version:
     description: "The installed Sotto release tag"
     value: ${{ steps.install-unix.outputs.version || steps.install-windows.outputs.version }}
