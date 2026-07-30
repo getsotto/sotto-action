@@ -117,6 +117,9 @@ try {
     }
 
     $InstallDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+    "version=$Version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+    "target=$Target" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+    "binary-path=$BinaryPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
     Write-Host "installed $BinaryPath"
 } finally {

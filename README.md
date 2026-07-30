@@ -23,12 +23,32 @@ values - that stays entirely under your workflow's control via `sotto run --` /
 `sotto-version` is **required** - there is no implicit "latest", so a new Sotto release can never
 silently change your CI's behaviour. Pin it the same way you'd pin any other tool version.
 
-Works across `ubuntu-latest`, `macos-latest`, and `windows-latest` runners: internally this
-downloads the archive for the selected release, verifies its checksum and Sigstore signature, and
-checks that the installed binary reports the requested version. Signature verification is
-mandatory: a missing or invalid bundle fails the job rather than falling back to a checksum-only
-install. The verification identity is pinned to the selected tag of Sotto's release workflow; see
+The action supports x86_64 and ARM64 Linux, x86_64 and Apple Silicon macOS, and x86_64 Windows.
+Internally it downloads the archive for the selected release, verifies its checksum and Sigstore
+signature, and checks that the installed binary reports the requested version. Signature
+verification is mandatory: a missing or invalid bundle fails the job rather than falling back to
+a checksum-only install. The verification identity is pinned to the selected tag of Sotto's
+release workflow; see
 [SECURITY.md](https://github.com/getsotto/sotto/blob/main/SECURITY.md) for the release model.
+
+## Outputs
+
+Give the step an `id` to use the resolved installation details in later steps:
+
+```yaml
+- uses: getsotto/sotto-action@v1
+  id: sotto
+  with:
+    sotto-version: v0.4.0
+
+- run: echo "installed ${{ steps.sotto.outputs.version }} for ${{ steps.sotto.outputs.target }}"
+```
+
+| Output | Example |
+| --- | --- |
+| `version` | `v0.4.0` |
+| `target` | `aarch64-apple-darwin` |
+| `binary-path` | `/path/to/sotto-bin/sotto` |
 
 ## Versioning
 
