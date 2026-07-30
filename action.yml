@@ -12,6 +12,18 @@ inputs:
       new Sotto release can never silently change your CI's behaviour.
     required: true
 
+outputs:
+  # Exactly one platform install step runs. Select the output from whichever step was not skipped.
+  version:
+    description: "The installed Sotto release tag"
+    value: ${{ steps.install-unix.outputs.version || steps.install-windows.outputs.version }}
+  target:
+    description: "The installed Sotto release target"
+    value: ${{ steps.install-unix.outputs.target || steps.install-windows.outputs.target }}
+  binary-path:
+    description: "The absolute path to the installed Sotto binary"
+    value: ${{ steps.install-unix.outputs.binary-path || steps.install-windows.outputs.binary-path }}
+
 runs:
   using: "composite"
   steps:
@@ -44,6 +56,7 @@ runs:
         install-dir: ${{ runner.temp }}/cosign
 
     - name: Install sotto (Linux/macOS)
+      id: install-unix
       if: runner.os != 'Windows'
       shell: bash
       env:
@@ -52,6 +65,7 @@ runs:
       run: '"${{ github.action_path }}/scripts/install.sh"'
 
     - name: Install sotto (Windows)
+      id: install-windows
       if: runner.os == 'Windows'
       shell: pwsh
       env:

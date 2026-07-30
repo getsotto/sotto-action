@@ -110,5 +110,10 @@ expected="sotto ${version#v}"
     fail "installed binary reported '$actual', expected '$expected'"
 
 printf '%s\n' "$install_dir" >>"$GITHUB_PATH"
+{
+    printf 'version=%s\n' "$version"
+    printf 'target=%s\n' "$target"
+    printf 'binary-path=%s\n' "$install_dir/sotto"
+} >>"$GITHUB_OUTPUT"
 
 say "installed $install_dir/sotto"

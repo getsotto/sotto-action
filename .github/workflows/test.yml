@@ -1,7 +1,9 @@
-# Exercises the action itself (this repo's whole reason to exist) across every runner OS it
-# claims to support. Pinned to a real getsotto/sotto tag rather than "latest" - matches the
-# action's own no-implicit-latest posture.
+# Exercises the action itself (this repo's whole reason to exist) across every release target it
+# supports. macos-latest is ARM64, so macos-15-intel covers the separate x86_64 release; likewise,
+# ubuntu-24.04-arm covers Linux ARM64 alongside the default x86_64 Ubuntu runner.
 #
+# The test is pinned to a real getsotto/sotto tag rather than "latest", matching the action's own
+# no-implicit-latest posture.
 # v0.4.0 is the first getsotto/sotto release with Windows and Linux ARM64 artifacts (v0.3.0 and
 # earlier predate that work), so this is also the first version this test can actually pass
 # against on windows-latest.
@@ -37,15 +39,32 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - uses: ./
+      - id: sotto
+        name: Install sotto
+        uses: ./
         with:
           sotto-version: ${{ env.SOTTO_TEST_VERSION }}
-      - name: sotto --version actually reports the pinned version
+      - name: Check the installed version and outputs
         shell: bash
+        env:
+          OUTPUT_VERSION: ${{ steps.sotto.outputs.version }}
+          OUTPUT_TARGET: ${{ steps.sotto.outputs.target }}
+          OUTPUT_BINARY_PATH: ${{ steps.sotto.outputs.binary-path }}
+          EXPECTED_TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
           actual="$(sotto --version)"
@@ -55,3 +74,6 @@ jobs:
             echo "expected '$actual' to equal '$expected'" >&2
             exit 1
           fi
+          test "$OUTPUT_VERSION" = "$SOTTO_TEST_VERSION"
+          test "$OUTPUT_TARGET" = "$EXPECTED_TARGET"
+          test -f "$OUTPUT_BINARY_PATH"
