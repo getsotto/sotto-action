@@ -24,11 +24,11 @@ values - that stays entirely under your workflow's control via `sotto run --` /
 silently change your CI's behaviour. Pin it the same way you'd pin any other tool version.
 
 Works across `ubuntu-latest`, `macos-latest`, and `windows-latest` runners: internally this
-reuses [`install.sh`](https://github.com/getsotto/sotto/blob/main/install.sh) (Linux/macOS) and
-[`install.ps1`](https://github.com/getsotto/sotto/blob/main/install.ps1) (Windows) - the same
-checksum- and Sigstore-verified installers documented in
-[SECURITY.md](https://github.com/getsotto/sotto/blob/main/SECURITY.md), not a separate
-reimplementation.
+downloads the archive for the selected release, verifies its checksum and Sigstore signature, and
+checks that the installed binary reports the requested version. Signature verification is
+mandatory: a missing or invalid bundle fails the job rather than falling back to a checksum-only
+install. The verification identity is pinned to the selected tag of Sotto's release workflow; see
+[SECURITY.md](https://github.com/getsotto/sotto/blob/main/SECURITY.md) for the release model.
 
 ## Versioning
 

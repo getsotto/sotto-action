@@ -17,6 +17,22 @@ env:
   SOTTO_TEST_VERSION: v0.4.0
 
 jobs:
+  reject-invalid-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject an unpinned version
+        id: invalid
+        continue-on-error: true
+        uses: ./
+        with:
+          sotto-version: latest
+      - name: Check rejection
+        if: steps.invalid.outcome != 'failure'
+        run: |
+          echo "expected the action to reject an unpinned version" >&2
+          exit 1
+
   install-and-verify:
     strategy:
       fail-fast: false
@@ -34,11 +50,8 @@ jobs:
           set -euo pipefail
           actual="$(sotto --version)"
           echo "$actual"
-          expected="${SOTTO_TEST_VERSION#v}"
-          case "$actual" in
-          *"$expected"*) ;;
-          *)
-            echo "expected '$actual' to contain the pinned version $expected" >&2
+          expected="sotto ${SOTTO_TEST_VERSION#v}"
+          if [ "$actual" != "$expected" ]; then
+            echo "expected '$actual' to equal '$expected'" >&2
             exit 1
-            ;;
-          esac
+          fi
