@@ -52,8 +52,13 @@ esac
 asset="sotto-$version-$target.tar.gz"
 base="https://github.com/$REPO/releases/download/$version"
 identity="https://github.com/$REPO/.github/workflows/release.yml@refs/tags/$version"
-install_dir="${SOTTO_INSTALL_DIR:-${RUNNER_TEMP:-}/sotto-bin}"
-[ -n "$install_dir" ] || fail "SOTTO_INSTALL_DIR or RUNNER_TEMP must be set"
+if [ -n "${SOTTO_INSTALL_DIR:-}" ]; then
+    install_dir="$SOTTO_INSTALL_DIR"
+elif [ -n "${RUNNER_TEMP:-}" ]; then
+    install_dir="$RUNNER_TEMP/sotto-bin"
+else
+    fail "SOTTO_INSTALL_DIR or RUNNER_TEMP must be set"
+fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
