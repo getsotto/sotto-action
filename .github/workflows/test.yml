@@ -34,11 +34,15 @@ jobs:
             value: v0.4
           - name: prerelease
             value: v0.4.0-rc.1
+          - name: uppercase
+            value: V0.4.0
+          - name: trailing-newline
+            value: "v0.4.0\n"
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check Unix validation error
+      - name: Check Linux/macOS validation error
         if: runner.os != 'Windows'
         shell: bash
         env:
@@ -77,11 +81,31 @@ jobs:
         uses: ./
         with:
           sotto-version: ${{ matrix.version.value }}
-      - name: Check action outcome
-        if: steps.invalid.outcome != 'failure'
+
+      # The cosign installer creates this directory. Its absence proves validation ran first.
+      - name: Check Linux/macOS action outcome
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          ACTION_OUTCOME: ${{ steps.invalid.outcome }}
         run: |
-          echo "expected the action to reject the invalid version" >&2
-          exit 1
+          set -euo pipefail
+          test "$ACTION_OUTCOME" = "failure"
+          test ! -e "$RUNNER_TEMP/cosign"
+
+      - name: Check Windows action outcome
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ACTION_OUTCOME: ${{ steps.invalid.outcome }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:ACTION_OUTCOME -ne "failure") {
+            throw "expected the action to reject the invalid version"
+          }
+          if (Test-Path (Join-Path $env:RUNNER_TEMP "cosign")) {
+            throw "cosign was installed before version validation failed"
+          }
 
   reject-missing-release:
     runs-on: ubuntu-latest

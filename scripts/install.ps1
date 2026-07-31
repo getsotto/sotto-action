@@ -23,8 +23,8 @@ function Download([string] $Uri, [string] $OutFile) {
     Fail "download failed: $Uri ($LastError)"
 }
 
-$Version = $env:SOTTO_VERSION
-if (-not $Version -or $Version -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
+$Version = [string] $env:SOTTO_VERSION
+if (-not [regex]::IsMatch($Version, '\Av[0-9]+\.[0-9]+\.[0-9]+\z')) {
     Fail "sotto-version must be an exact release such as v0.4.0"
 }
 
