@@ -38,6 +38,12 @@ jobs:
             value: V0.4.0
           - name: trailing-newline
             value: "v0.4.0\n"
+          - name: four-components
+            value: v0.4.0.1
+          - name: leading-dot
+            value: v.0.4
+          - name: trailing-dot
+            value: v0.4.0.
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
