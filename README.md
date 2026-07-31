@@ -55,3 +55,8 @@ Give the step an `id` to use the resolved installation details in later steps:
 This action is tagged independently of the `sotto` CLI's own version (`v0.1.0`, `v0.2.0`, ...) -
 `sotto-action@v1` and `sotto-version: v0.4.0` are two unrelated version numbers. See
 [getsotto/sotto#67](https://github.com/getsotto/sotto/issues/67) for why.
+
+Use `getsotto/sotto-action@v1` to follow the latest validated v1 action release, or pin an exact
+action release such as `getsotto/sotto-action@v1.1.0` for an immutable workflow dependency. The
+`v1` convenience tag moves only after the exact release has passed the full test matrix and been
+published.
