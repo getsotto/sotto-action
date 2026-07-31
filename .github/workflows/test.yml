@@ -202,6 +202,55 @@ jobs:
             }
           }
 
+  reject-tampered-checksum:
+    name: reject-tampered-checksum (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Linux checksum error
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/sotto-fixture"
+          cp .github/fixtures/checksum/sotto-fixture "$fixture"
+          printf 'tampered\n' >> "$fixture"
+
+          set +e
+          output="$(scripts/verify-checksum.sh \
+            "$fixture" .github/fixtures/checksum/SHA256SUMS 2>&1)"
+          status=$?
+          set -e
+
+          test "$status" -ne 0
+          test "$output" = 'error: checksum verification failed for sotto-fixture'
+
+      - name: Check Windows checksum error
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $Fixture = Join-Path $env:RUNNER_TEMP "sotto-fixture"
+          Copy-Item .github/fixtures/checksum/sotto-fixture $Fixture
+          Add-Content -NoNewline -Path $Fixture -Value "tampered"
+          $Expected = "error: checksum verification failed for sotto-fixture"
+
+          try {
+            & scripts/verify-checksum.ps1 `
+              -AssetPath $Fixture `
+              -SumsPath .github/fixtures/checksum/SHA256SUMS
+            throw "checksum helper accepted a tampered fixture"
+          } catch {
+            if ($_.Exception.Message -ne $Expected) {
+              throw "unexpected checksum error: $($_.Exception.Message)"
+            }
+          }
+
   install-and-verify:
     strategy:
       fail-fast: false

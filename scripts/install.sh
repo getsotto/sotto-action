@@ -3,6 +3,7 @@
 set -eu
 
 REPO="getsotto/sotto"
+script_dir="$(CDPATH= cd "$(dirname "$0")" && pwd)"
 
 say() {
     printf '%s\n' "$*" >&2
@@ -91,18 +92,7 @@ verify "SHA256SUMS"
 verify "$asset"
 say "signatures verified"
 
-awk -v asset="$asset" '$2 == asset { print; found++ } END { exit found == 1 ? 0 : 1 }' \
-    "$tmp/SHA256SUMS" >"$tmp/asset.sum" ||
-    fail "$asset must appear exactly once in SHA256SUMS"
-
-(
-    cd "$tmp"
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum -c asset.sum >/dev/null
-    else
-        shasum -a 256 -c asset.sum >/dev/null
-    fi
-) || fail "checksum verification failed for $asset"
+"$script_dir/verify-checksum.sh" "$tmp/$asset" "$tmp/SHA256SUMS"
 say "checksum verified"
 
 stage="sotto-$version-$target"
