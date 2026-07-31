@@ -20,20 +20,104 @@ env:
 
 jobs:
   reject-invalid-version:
-    runs-on: ubuntu-latest
+    name: reject-invalid-version (${{ matrix.runner }}, ${{ matrix.version.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, windows-latest]
+        version:
+          - name: empty
+            value: ""
+          - name: floating
+            value: latest
+          - name: partial
+            value: v0.4
+          - name: prerelease
+            value: v0.4.0-rc.1
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - name: Reject an unpinned version
+
+      - name: Check Unix validation error
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          SOTTO_VERSION: ${{ matrix.version.value }}
+        run: |
+          set +e
+          output="$(scripts/validate-version.sh 2>&1)"
+          status=$?
+          set -e
+          expected="sotto-version must be an exact release such as v0.4.0"
+          test "$status" -ne 0
+          test "$output" = "$expected"
+
+      - name: Check Windows validation error
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          SOTTO_VERSION: ${{ matrix.version.value }}
+        run: |
+          $Expected = "sotto-version must be an exact release such as v0.4.0"
+          try {
+            & scripts/validate-version.ps1
+            throw "validator accepted an invalid version"
+          } catch {
+            if ($_.Exception.Message -ne $Expected) {
+              throw "unexpected validation error: $($_.Exception.Message)"
+            }
+          }
+
+      # Also exercise action.yml's platform routing, after checking the validator's exact error.
+      - name: Check action rejection
         id: invalid
         continue-on-error: true
         uses: ./
         with:
-          sotto-version: latest
-      - name: Check rejection
+          sotto-version: ${{ matrix.version.value }}
+      - name: Check action outcome
         if: steps.invalid.outcome != 'failure'
         run: |
-          echo "expected the action to reject an unpinned version" >&2
+          echo "expected the action to reject the invalid version" >&2
           exit 1
+
+  reject-missing-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Prove GitHub and a known Sotto release are reachable, so a general network failure cannot
+      # make the following missing-release assertion pass for the wrong reason.
+      - name: Check release downloads are reachable
+        run: |
+          curl --retry 3 -fsSIL \
+            https://github.com/getsotto/sotto/releases/download/v0.4.0/sotto-v0.4.0-x86_64-unknown-linux-gnu.tar.gz \
+            >/dev/null
+
+      - name: Check missing release error
+        shell: bash
+        run: |
+          set -euo pipefail
+          fake_bin="$RUNNER_TEMP/fake-bin"
+          mkdir -p "$fake_bin"
+          ln -s /usr/bin/true "$fake_bin/cosign"
+
+          set +e
+          output="$(
+            PATH="$fake_bin:$PATH" \
+            SOTTO_VERSION=v999.999.999 \
+            SOTTO_INSTALL_DIR="$RUNNER_TEMP/sotto-bin" \
+            GITHUB_PATH="$RUNNER_TEMP/github-path" \
+            GITHUB_OUTPUT="$RUNNER_TEMP/github-output" \
+            scripts/install.sh 2>&1
+          )"
+          status=$?
+          set -e
+
+          expected="error: download failed: https://github.com/getsotto/sotto/releases/download/v999.999.999/sotto-v999.999.999-x86_64-unknown-linux-gnu.tar.gz"
+          actual="$(printf '%s\n' "$output" | tail -n 1)"
+          test "$status" -ne 0
+          test "$actual" = "$expected"
 
   install-and-verify:
     strategy:

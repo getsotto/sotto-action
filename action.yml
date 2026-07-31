@@ -27,27 +27,21 @@ outputs:
 runs:
   using: "composite"
   steps:
+    # Fail before downloading cosign. The installers repeat this check because they can also be
+    # invoked directly, outside the action.
     - name: Validate sotto-version (Linux/macOS)
       if: runner.os != 'Windows'
       shell: bash
       env:
         SOTTO_VERSION: ${{ inputs.sotto-version }}
-      run: |
-        if [[ ! "$SOTTO_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::sotto-version must be an exact release such as v0.4.0" >&2
-          exit 1
-        fi
+      run: '"${{ github.action_path }}/scripts/validate-version.sh"'
 
     - name: Validate sotto-version (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       env:
         SOTTO_VERSION: ${{ inputs.sotto-version }}
-      run: |
-        if ($env:SOTTO_VERSION -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
-          Write-Error "sotto-version must be an exact release such as v0.4.0"
-          exit 1
-        }
+      run: '& "${{ github.action_path }}\scripts\validate-version.ps1"'
 
     - name: Install cosign
       uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
