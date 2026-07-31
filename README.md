@@ -55,3 +55,19 @@ Give the step an `id` to use the resolved installation details in later steps:
 This action is tagged independently of the `sotto` CLI's own version (`v0.1.0`, `v0.2.0`, ...) -
 `sotto-action@v1` and `sotto-version: v0.4.0` are two unrelated version numbers. See
 [getsotto/sotto#67](https://github.com/getsotto/sotto/issues/67) for why.
+
+Use `@v1` to receive backwards-compatible action updates, a full tag such as `@v1.1.0` to pin a
+version-specific action release, or a full commit SHA for the strongest workflow pinning.
+
+## Releasing
+
+Maintainers release the action by pushing an exact semantic-version tag from `main`:
+
+```sh
+git tag -a v1.1.0 -m "v1.1.0"
+git push origin v1.1.0
+```
+
+The release workflow validates the tag, runs the complete target matrix, creates the versioned
+`v1.1.0` GitHub release, then moves the compatible major tag (`v1`) to the same commit. Invalid tags
+and tags whose commit is not on `main` fail without publishing or moving the major tag.

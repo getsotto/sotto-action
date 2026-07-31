@@ -14,25 +14,57 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 env:
   SOTTO_TEST_VERSION: v0.4.0
 
 jobs:
   reject-invalid-version:
+    name: reject-invalid-version (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: empty
+            version: ""
+          - name: floating
+            version: latest
+          - name: partial
+            version: v0.4
+          - name: prerelease
+            version: v0.4.0-rc.1
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Reject an unpinned version
+      - name: Reject invalid version
         id: invalid
         continue-on-error: true
         uses: ./
         with:
-          sotto-version: latest
+          sotto-version: ${{ matrix.version }}
       - name: Check rejection
         if: steps.invalid.outcome != 'failure'
+        env:
+          REJECTED_VERSION: ${{ matrix.version }}
         run: |
-          echo "expected the action to reject an unpinned version" >&2
+          echo "expected the action to reject '$REJECTED_VERSION'" >&2
+          exit 1
+
+  reject-missing-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject a version with no release
+        id: missing
+        continue-on-error: true
+        uses: ./
+        with:
+          sotto-version: v999.999.999
+      - name: Check rejection
+        if: steps.missing.outcome != 'failure'
+        run: |
+          echo "expected the action to reject a version with no release" >&2
           exit 1
 
   install-and-verify:
