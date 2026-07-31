@@ -214,7 +214,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check Linux checksum error
+      - name: Check Linux checksum errors
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -232,7 +232,30 @@ jobs:
           test "$status" -ne 0
           test "$output" = 'error: checksum verification failed for sotto-fixture'
 
-      - name: Check Windows checksum error
+          # Exercise the manifest cardinality guard separately from the digest mismatch above.
+          sums="$RUNNER_TEMP/SHA256SUMS"
+          printf '%s\n' \
+            'e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  other-file' \
+            > "$sums"
+          set +e
+          output="$(scripts/verify-checksum.sh "$fixture" "$sums" 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          test "$output" = 'error: sotto-fixture must appear exactly once in SHA256SUMS'
+
+          printf '%s\n%s\n' \
+            'e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  sotto-fixture' \
+            'e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  sotto-fixture' \
+            > "$sums"
+          set +e
+          output="$(scripts/verify-checksum.sh "$fixture" "$sums" 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          test "$output" = 'error: sotto-fixture must appear exactly once in SHA256SUMS'
+
+      - name: Check Windows checksum errors
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -250,6 +273,31 @@ jobs:
           } catch {
             if ($_.Exception.Message -ne $Expected) {
               throw "unexpected checksum error: $($_.Exception.Message)"
+            }
+          }
+
+          $Manifest = Join-Path $env:RUNNER_TEMP "SHA256SUMS"
+          Set-Content -Path $Manifest -Value "e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  other-file"
+          $ExpectedManifest = "error: sotto-fixture must appear exactly once in SHA256SUMS"
+          try {
+            & scripts/verify-checksum.ps1 -AssetPath $Fixture -SumsPath $Manifest
+            throw "checksum helper accepted a missing fixture entry"
+          } catch {
+            if ($_.Exception.Message -ne $ExpectedManifest) {
+              throw "unexpected manifest error: $($_.Exception.Message)"
+            }
+          }
+
+          Set-Content -Path $Manifest -Value @(
+            "e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  sotto-fixture"
+            "e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  sotto-fixture"
+          )
+          try {
+            & scripts/verify-checksum.ps1 -AssetPath $Fixture -SumsPath $Manifest
+            throw "checksum helper accepted duplicate fixture entries"
+          } catch {
+            if ($_.Exception.Message -ne $ExpectedManifest) {
+              throw "unexpected duplicate manifest error: $($_.Exception.Message)"
             }
           }
 
