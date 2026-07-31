@@ -5,12 +5,13 @@
 $ErrorActionPreference = "Stop"
 
 function Fail([string] $Message) {
-    # Keep the action annotation while matching the installers' plain error format in the log.
+    # Write-Host emits an unformatted GitHub annotation; throw supplies the terminating plain error.
     Write-Host "::error::$Message"
     throw "error: $Message"
 }
 
 $Version = [string] $env:SOTTO_VERSION
+# Absolute .NET anchors reject trailing newlines; IsMatch is case-sensitive without regex options.
 if (-not [regex]::IsMatch($Version, '\Av[0-9]+\.[0-9]+\.[0-9]+\z')) {
     Fail "sotto-version must be an exact release such as v0.4.0"
 }

@@ -42,12 +42,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check Linux/macOS validation error
+      - name: Check Linux validation errors
         if: runner.os != 'Windows'
         shell: bash
         env:
           SOTTO_VERSION: ${{ matrix.version.value }}
         run: |
+          set -euo pipefail
           set +e
           output="$(scripts/validate-version.sh 2>&1)"
           status=$?
@@ -58,23 +59,48 @@ jobs:
           test "$status" -ne 0
           test "$output" = "$expected"
 
+          set +e
+          output="$(scripts/install.sh 2>&1)"
+          status=$?
+          set -e
+          expected='error: sotto-version must be an exact release such as v0.4.0'
+          test "$status" -ne 0
+          test "$output" = "$expected"
+
       - name: Check Windows validation error
         if: runner.os == 'Windows'
         shell: pwsh
         env:
           SOTTO_VERSION: ${{ matrix.version.value }}
         run: |
+          $ErrorActionPreference = "Stop"
           $Expected = "error: sotto-version must be an exact release such as v0.4.0"
+          $OutputPath = Join-Path $env:RUNNER_TEMP "validator-output.txt"
           try {
-            & scripts/validate-version.ps1
+            # Capture Write-Host so the expected failure does not create red annotations on this
+            # passing test job. The action-routing check below still exercises the annotation.
+            & scripts/validate-version.ps1 *> $OutputPath
             throw "validator accepted an invalid version"
           } catch {
             if ($_.Exception.Message -ne $Expected) {
               throw "unexpected validation error: $($_.Exception.Message)"
             }
           }
+          $Annotation = (Get-Content -Raw $OutputPath).TrimEnd()
+          if ($Annotation -ne "::error::sotto-version must be an exact release such as v0.4.0") {
+            throw "unexpected validation annotation: $Annotation"
+          }
 
-      # Also exercise action.yml's platform routing, after checking the validator's exact error.
+          try {
+            & scripts/install.ps1
+            throw "installer accepted an invalid version"
+          } catch {
+            if ($_.Exception.Message -ne $Expected) {
+              throw "unexpected installer validation error: $($_.Exception.Message)"
+            }
+          }
+
+      # Also exercise action.yml's Linux and Windows routing after checking both validation paths.
       - name: Check action rejection
         id: invalid
         continue-on-error: true
@@ -83,7 +109,7 @@ jobs:
           sotto-version: ${{ matrix.version.value }}
 
       # The cosign installer creates this directory. Its absence proves validation ran first.
-      - name: Check Linux/macOS action outcome
+      - name: Check Linux action outcome
         if: runner.os != 'Windows'
         shell: bash
         env:
