@@ -20,20 +20,187 @@ env:
 
 jobs:
   reject-invalid-version:
-    runs-on: ubuntu-latest
+    name: reject-invalid-version (${{ matrix.runner }}, ${{ matrix.version.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, windows-latest]
+        version:
+          - name: empty
+            value: ""
+          - name: floating
+            value: latest
+          - name: partial
+            value: v0.4
+          - name: prerelease
+            value: v0.4.0-rc.1
+          - name: uppercase
+            value: V0.4.0
+          - name: trailing-newline
+            value: "v0.4.0\n"
+          - name: four-components
+            value: v0.4.0.1
+          - name: leading-dot
+            value: v.0.4
+          - name: trailing-dot
+            value: v0.4.0.
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - name: Reject an unpinned version
+
+      - name: Check Linux validation errors
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          SOTTO_VERSION: ${{ matrix.version.value }}
+        run: |
+          set -euo pipefail
+          set +e
+          output="$(scripts/validate-version.sh 2>&1)"
+          status=$?
+          set -e
+          expected="$(printf '%s\n' \
+            '::error::sotto-version must be an exact release such as v0.4.0' \
+            'error: sotto-version must be an exact release such as v0.4.0')"
+          test "$status" -ne 0
+          test "$output" = "$expected"
+
+          set +e
+          output="$(scripts/install.sh 2>&1)"
+          status=$?
+          set -e
+          expected='error: sotto-version must be an exact release such as v0.4.0'
+          test "$status" -ne 0
+          test "$output" = "$expected"
+
+      - name: Check Windows validation errors
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          SOTTO_VERSION: ${{ matrix.version.value }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $Expected = "error: sotto-version must be an exact release such as v0.4.0"
+          $OutputPath = Join-Path $env:RUNNER_TEMP "validator-output.txt"
+          try {
+            # Capture Write-Host so the expected failure does not create red annotations on this
+            # passing test job. The action-routing check below still exercises the annotation.
+            & scripts/validate-version.ps1 *> $OutputPath
+            throw "validator accepted an invalid version"
+          } catch {
+            if ($_.Exception.Message -ne $Expected) {
+              throw "unexpected validation error: $($_.Exception.Message)"
+            }
+          }
+          $Annotation = (Get-Content -Raw $OutputPath).TrimEnd()
+          if ($Annotation -ne "::error::sotto-version must be an exact release such as v0.4.0") {
+            throw "unexpected validation annotation: $Annotation"
+          }
+
+          try {
+            & scripts/install.ps1
+            throw "installer accepted an invalid version"
+          } catch {
+            if ($_.Exception.Message -ne $Expected) {
+              throw "unexpected installer validation error: $($_.Exception.Message)"
+            }
+          }
+
+      # Also exercise action.yml's Linux and Windows routing after checking both validation paths.
+      - name: Check action rejection
         id: invalid
         continue-on-error: true
         uses: ./
         with:
-          sotto-version: latest
-      - name: Check rejection
-        if: steps.invalid.outcome != 'failure'
+          sotto-version: ${{ matrix.version.value }}
+
+      # The cosign installer creates this directory. Its absence proves validation ran first.
+      - name: Check Linux action outcome
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          ACTION_OUTCOME: ${{ steps.invalid.outcome }}
         run: |
-          echo "expected the action to reject an unpinned version" >&2
-          exit 1
+          set -euo pipefail
+          test "$ACTION_OUTCOME" = "failure"
+          test ! -e "$RUNNER_TEMP/cosign"
+
+      - name: Check Windows action outcome
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ACTION_OUTCOME: ${{ steps.invalid.outcome }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:ACTION_OUTCOME -ne "failure") {
+            throw "expected the action to reject the invalid version"
+          }
+          if (Test-Path (Join-Path $env:RUNNER_TEMP "cosign")) {
+            throw "cosign was installed before version validation failed"
+          }
+
+  reject-missing-release:
+    name: reject-missing-release (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The archive 404s before signature verification. A fake cosign only satisfies the
+      # installer's precondition, isolating the missing-release path from another download.
+      - name: Check Linux missing release error
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fake_bin="$RUNNER_TEMP/fake-bin"
+          mkdir -p "$fake_bin"
+          ln -s /usr/bin/true "$fake_bin/cosign"
+
+          set +e
+          output="$(
+            PATH="$fake_bin:$PATH" \
+            SOTTO_VERSION=v999.999.999 \
+            SOTTO_INSTALL_DIR="$RUNNER_TEMP/sotto-bin" \
+            GITHUB_PATH="$RUNNER_TEMP/github-path" \
+            GITHUB_OUTPUT="$RUNNER_TEMP/github-output" \
+            scripts/install.sh 2>&1
+          )"
+          status=$?
+          set -e
+
+          expected="error: release asset not found: https://github.com/getsotto/sotto/releases/download/v999.999.999/sotto-v999.999.999-x86_64-unknown-linux-gnu.tar.gz"
+          actual="$(printf '%s\n' "$output" | tail -n 1)"
+          test "$status" -ne 0
+          test "$actual" = "$expected"
+
+      - name: Check Windows missing release error
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $FakeBin = Join-Path $env:RUNNER_TEMP "fake-bin"
+          New-Item -ItemType Directory -Path $FakeBin | Out-Null
+          Set-Content -Path (Join-Path $FakeBin "cosign.cmd") -Value "@exit /b 0" -Encoding ASCII
+
+          $env:PATH = "$FakeBin;$env:PATH"
+          $env:SOTTO_VERSION = "v999.999.999"
+          $env:SOTTO_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "sotto-bin"
+          $env:GITHUB_PATH = Join-Path $env:RUNNER_TEMP "github-path"
+          $env:GITHUB_OUTPUT = Join-Path $env:RUNNER_TEMP "github-output"
+          $Expected = "error: release asset not found: https://github.com/getsotto/sotto/releases/download/v999.999.999/sotto-v999.999.999-x86_64-pc-windows-msvc.zip"
+
+          try {
+            & scripts/install.ps1
+            throw "installer accepted a version with no release"
+          } catch {
+            if ($_.Exception.Message -ne $Expected) {
+              throw "unexpected missing release error: $($_.Exception.Message)"
+            }
+          }
 
   install-and-verify:
     strategy:
