@@ -48,7 +48,9 @@ jobs:
           output="$(scripts/validate-version.sh 2>&1)"
           status=$?
           set -e
-          expected="sotto-version must be an exact release such as v0.4.0"
+          expected="$(printf '%s\n' \
+            '::error::sotto-version must be an exact release such as v0.4.0' \
+            'error: sotto-version must be an exact release such as v0.4.0')"
           test "$status" -ne 0
           test "$output" = "$expected"
 
@@ -58,7 +60,7 @@ jobs:
         env:
           SOTTO_VERSION: ${{ matrix.version.value }}
         run: |
-          $Expected = "sotto-version must be an exact release such as v0.4.0"
+          $Expected = "error: sotto-version must be an exact release such as v0.4.0"
           try {
             & scripts/validate-version.ps1
             throw "validator accepted an invalid version"
