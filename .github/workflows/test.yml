@@ -67,7 +67,7 @@ jobs:
           test "$status" -ne 0
           test "$output" = "$expected"
 
-      - name: Check Windows validation error
+      - name: Check Windows validation errors
         if: runner.os == 'Windows'
         shell: pwsh
         env:
