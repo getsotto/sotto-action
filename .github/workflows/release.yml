@@ -17,10 +17,12 @@ on:
 permissions:
   contents: read
 
-# All action releases share one queue because each successful run may move the same v1 tag. A newer
-# dispatch must not cancel an older run after it has created the immutable release but before moving v1.
+# All action releases share one queue because each successful run may move the same v1 tag. GitHub
+# keeps one active and one pending run; a newer pending dispatch may replace an older pending run,
+# but it must never cancel an active run after that run has created the immutable release.
 concurrency:
   group: action-release
+  cancel-in-progress: false
 
 jobs:
   validate:

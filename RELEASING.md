@@ -18,9 +18,9 @@ users who want compatible updates without changing their workflow.
 
 The workflow creates the exact annotated tag and GitHub Release first. It verifies that release
 exists before force-moving `v1`, then updates the existing `v1` release notes to name the exact
-release it tracks. All release runs share one concurrency queue, and both version ordering and git
-ancestry are checked before the move, so overlapping or older dispatches cannot move `v1`
-backwards.
+release it tracks. All release runs share one concurrency queue. GitHub keeps one active and one
+pending run, so a newer pending dispatch can replace an older pending dispatch; version ordering
+and git ancestry are checked before any run moves `v1`.
 
 Rerunning the same version is safe when its exact tag already points to the workflow commit. Never
 move an exact release tag or move `v1` manually. If a published release needs a fix, merge the fix
