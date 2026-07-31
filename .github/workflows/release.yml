@@ -48,6 +48,13 @@ jobs:
             exit 1
           fi
 
+          # Refresh remote tags explicitly so version and ancestry guards cannot use stale refs.
+          git fetch --force origin '+refs/tags/*:refs/tags/*'
+          if ! git rev-parse --verify --quiet 'v1^{commit}' >/dev/null; then
+            echo "error: remote v1 convenience tag is missing" >&2
+            exit 1
+          fi
+
           # A rerun may reuse an exact tag only when it already names this workflow commit.
           if git rev-parse --verify --quiet "$RELEASE_TAG^{commit}" >/dev/null; then
             if [ "$(git rev-parse "$RELEASE_TAG^{commit}")" != "$GITHUB_SHA" ]; then
@@ -101,6 +108,9 @@ jobs:
         run: |
           set -euo pipefail
 
+          # The queued job may start after another ref update, so refresh the refs before tagging.
+          git fetch --force origin '+refs/tags/*:refs/tags/*'
+
           # GitHub's bot identity keeps the annotated tag attributable without a maintainer key.
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -127,8 +137,11 @@ jobs:
 
           # Recheck the release and ancestry immediately before the only destructive operation.
           gh release view "$RELEASE_TAG" >/dev/null
-          if git rev-parse --verify --quiet 'v1^{commit}' >/dev/null && \
-            ! git merge-base --is-ancestor 'v1^{commit}' "$GITHUB_SHA"; then
+          if ! git rev-parse --verify --quiet 'v1^{commit}' >/dev/null; then
+            echo "error: remote v1 convenience tag is missing" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor 'v1^{commit}' "$GITHUB_SHA"; then
             echo "error: refusing to move v1 backwards" >&2
             exit 1
           fi
