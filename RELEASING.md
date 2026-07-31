@@ -1,7 +1,9 @@
 # Releasing Sotto Setup
 
-Action releases use immutable `v1.x.y` tags. The moving `v1` tag is a convenience pointer for
-users who want compatible updates without changing their workflow.
+Action releases use exact `v1.x.y` tags that the release workflow treats as immutable. The moving
+`v1` tag is a convenience pointer for users who want compatible updates without changing their
+workflow. The initial bootstrap release used `v1` directly; `v1.1.0` is the first numbered release
+and there is no `v1.0.0` tag.
 
 ## Cutting a release
 

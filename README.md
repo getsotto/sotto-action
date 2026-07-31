@@ -59,4 +59,6 @@ This action is tagged independently of the `sotto` CLI's own version (`v0.1.0`, 
 Use `getsotto/sotto-action@v1` to follow the latest validated v1 action release, or pin an exact
 action release such as `getsotto/sotto-action@v1.1.0` for an immutable workflow dependency. The
 `v1` convenience tag moves only after the exact release has passed the full test matrix and been
-published.
+published by the release workflow. `v1.1.0` is the first numbered v1 action release; the initial
+bootstrap release used `v1` directly, so there is no `v1.0.0` tag. Manually pushing tags bypasses
+the workflow and is not a supported release path.
