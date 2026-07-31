@@ -1,0 +1,147 @@
+# Publishes an immutable action release, then moves the matching major convenience tag only after
+# the full action test matrix succeeds. Dispatch this workflow from main with the exact release tag.
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact v1 action release tag
+        required: true
+        default: v1.1.0
+        type: string
+
+# Called tests and validation only need to read the checkout. The release job receives its narrower
+# write grant below, so no other job can create or move tags.
+permissions:
+  contents: read
+
+# All action releases share one queue because each successful run may move the same v1 tag. A newer
+# dispatch must not cancel an older run after it has created the immutable release but before moving v1.
+concurrency:
+  group: action-release
+
+jobs:
+  validate:
+    name: Validate release
+    runs-on: ubuntu-latest
+    steps:
+      # Full history and tags are required for the ancestry and forward-version guards below.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Check release tag and commit
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RELEASE_TAG" =~ ^v1\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: version must be an exact v1 action release such as v1.1.0" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "error: action releases must be dispatched from main" >&2
+            exit 1
+          fi
+
+          # A rerun may reuse an exact tag only when it already names this workflow commit.
+          if git rev-parse --verify --quiet "$RELEASE_TAG^{commit}" >/dev/null; then
+            if [ "$(git rev-parse "$RELEASE_TAG^{commit}")" != "$GITHUB_SHA" ]; then
+              echo "error: $RELEASE_TAG already points to another commit" >&2
+              exit 1
+            fi
+          fi
+
+          latest="$(git tag --list 'v1.*.*' | \
+            grep -E '^v1\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+          if [ -n "$latest" ]; then
+            newest="$(printf '%s\n%s\n' "$latest" "$RELEASE_TAG" | sort -V | tail -n 1)"
+            if [ "$newest" != "$RELEASE_TAG" ]; then
+              echo "error: $RELEASE_TAG would move v1 backwards from $latest" >&2
+              exit 1
+            fi
+          fi
+
+          # Commit ancestry is checked independently of version ordering so v1 can never move to
+          # an older main commit even if a larger version number is dispatched by mistake.
+          if git rev-parse --verify --quiet 'v1^{commit}' >/dev/null && \
+            ! git merge-base --is-ancestor 'v1^{commit}' "$GITHUB_SHA"; then
+            echo "error: v1 does not point to an ancestor of $GITHUB_SHA" >&2
+            exit 1
+          fi
+
+  test:
+    name: Test action
+    needs: validate
+    uses: ./.github/workflows/test.yml
+
+  release:
+    name: Publish release
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    # This job creates the exact release and updates the v1 convenience tag.
+    permissions:
+      contents: write
+    steps:
+      # Full history preserves the same ancestry guarantees when the queued release job starts.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Create exact release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          # GitHub's bot identity keeps the annotated tag attributable without a maintainer key.
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          if git rev-parse --verify --quiet "$RELEASE_TAG^{commit}" >/dev/null; then
+            test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
+          else
+            git tag -a "$RELEASE_TAG" "$GITHUB_SHA" -m "$RELEASE_TAG"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+
+          # This guard makes reruns idempotent after the tag or release has already been created.
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --generate-notes --latest
+          fi
+
+      - name: Move v1 after release validation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Recheck the release and ancestry immediately before the only destructive operation.
+          gh release view "$RELEASE_TAG" >/dev/null
+          if git rev-parse --verify --quiet 'v1^{commit}' >/dev/null && \
+            ! git merge-base --is-ancestor 'v1^{commit}' "$GITHUB_SHA"; then
+            echo "error: refusing to move v1 backwards" >&2
+            exit 1
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -fa v1 "$GITHUB_SHA" -m "v1 tracks $RELEASE_TAG"
+          git push origin refs/tags/v1 --force
+
+          # The repository already has a v1 GitHub Release. Keep its notes consistent with the
+          # moved tag while the exact release remains the canonical, latest release record.
+          if gh release view v1 >/dev/null 2>&1; then
+            gh release edit v1 \
+              --title v1 \
+              --notes "Tracks the latest validated v1 release: $RELEASE_TAG." \
+              --latest=false
+          fi
