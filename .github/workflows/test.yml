@@ -108,19 +108,19 @@ jobs:
           }
 
   reject-missing-release:
-    runs-on: ubuntu-latest
+    name: reject-missing-release (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
-      # Prove GitHub and a known Sotto release are reachable, so a general network failure cannot
-      # make the following missing-release assertion pass for the wrong reason.
-      - name: Check release downloads are reachable
-        run: |
-          curl --retry 3 -fsSIL \
-            https://github.com/getsotto/sotto/releases/download/v0.4.0/sotto-v0.4.0-x86_64-unknown-linux-gnu.tar.gz \
-            >/dev/null
-
-      - name: Check missing release error
+      # The archive 404s before signature verification. A fake cosign only satisfies the
+      # installer's precondition, isolating the missing-release path from another download.
+      - name: Check Linux missing release error
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
@@ -140,10 +140,35 @@ jobs:
           status=$?
           set -e
 
-          expected="error: download failed: https://github.com/getsotto/sotto/releases/download/v999.999.999/sotto-v999.999.999-x86_64-unknown-linux-gnu.tar.gz"
+          expected="error: release asset not found: https://github.com/getsotto/sotto/releases/download/v999.999.999/sotto-v999.999.999-x86_64-unknown-linux-gnu.tar.gz"
           actual="$(printf '%s\n' "$output" | tail -n 1)"
           test "$status" -ne 0
           test "$actual" = "$expected"
+
+      - name: Check Windows missing release error
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $FakeBin = Join-Path $env:RUNNER_TEMP "fake-bin"
+          New-Item -ItemType Directory -Path $FakeBin | Out-Null
+          Set-Content -Path (Join-Path $FakeBin "cosign.cmd") -Value "@exit /b 0" -Encoding ASCII
+
+          $env:PATH = "$FakeBin;$env:PATH"
+          $env:SOTTO_VERSION = "v999.999.999"
+          $env:SOTTO_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "sotto-bin"
+          $env:GITHUB_PATH = Join-Path $env:RUNNER_TEMP "github-path"
+          $env:GITHUB_OUTPUT = Join-Path $env:RUNNER_TEMP "github-output"
+          $Expected = "error: release asset not found: https://github.com/getsotto/sotto/releases/download/v999.999.999/sotto-v999.999.999-x86_64-pc-windows-msvc.zip"
+
+          try {
+            & scripts/install.ps1
+            throw "installer accepted a version with no release"
+          } catch {
+            if ($_.Exception.Message -ne $Expected) {
+              throw "unexpected missing release error: $($_.Exception.Message)"
+            }
+          }
 
   install-and-verify:
     strategy:

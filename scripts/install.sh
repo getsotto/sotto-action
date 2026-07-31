@@ -14,8 +14,16 @@ fail() {
 }
 
 download() {
-    curl --retry 3 --retry-delay 1 -fsSL -o "$2" "$1" ||
-        fail "download failed: $1"
+    # Keep a missing release distinct from transient network failures, both for users and tests.
+    if http_code="$(
+        curl --retry 3 --retry-delay 1 -fsSL -w '%{http_code}' -o "$2" "$1"
+    )"; then
+        return
+    fi
+    if [ "$http_code" = "404" ]; then
+        fail "release asset not found: $1"
+    fi
+    fail "download failed: $1"
 }
 
 version="${SOTTO_VERSION:-}"

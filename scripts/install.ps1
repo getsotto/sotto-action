@@ -15,6 +15,10 @@ function Download([string] $Uri, [string] $OutFile) {
             return
         } catch {
             $LastError = $_
+            # Keep a missing release distinct from transient network failures, both for users and tests.
+            if ($null -ne $_.Exception.Response -and [int] $_.Exception.Response.StatusCode -eq 404) {
+                Fail "release asset not found: $Uri"
+            }
             if ($Attempt -lt 3) {
                 Start-Sleep -Seconds 1
             }
