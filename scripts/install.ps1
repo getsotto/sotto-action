@@ -8,11 +8,13 @@ function Fail([string] $Message) {
 }
 
 function Download([string] $Uri, [string] $OutFile) {
+    $LastError = $null
     foreach ($Attempt in 1..3) {
         try {
             Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $OutFile
             return
         } catch {
+            $LastError = $_
             # Keep a missing release distinct from transient network failures, both for users and tests.
             if ($null -ne $_.Exception.Response -and [int] $_.Exception.Response.StatusCode -eq 404) {
                 Fail "release asset not found: $Uri"
@@ -22,6 +24,8 @@ function Download([string] $Uri, [string] $OutFile) {
             }
         }
     }
+    # Keep the final error consistent across platforms without hiding the useful Windows detail.
+    Write-Warning "last download error: $($LastError.Exception.Message)"
     Fail "download failed: $Uri"
 }
 
