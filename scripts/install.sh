@@ -36,7 +36,7 @@ esac
 # components before using the version in a URL or path.
 version_numbers="${version#v}"
 case "$version_numbers" in
-*[!0-9.]* | *.*.*.* | .* | *.) fail "sotto-version must be an exact release such as v0.4.0" ;;
+*[!0-9.]* | *.*.*.* | *.) fail "sotto-version must be an exact release such as v0.4.0" ;;
 esac
 old_ifs="$IFS"
 IFS=.
