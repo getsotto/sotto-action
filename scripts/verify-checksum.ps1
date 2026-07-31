@@ -1,5 +1,6 @@
 #Requires -Version 5.1
 
+# Kept separate so the installer and offline tampered fixtures exercise the same checksum path.
 param(
     [Parameter(Mandatory = $true)]
     [string] $AssetPath,

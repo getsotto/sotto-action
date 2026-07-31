@@ -1,5 +1,6 @@
 #!/bin/sh
 
+# Kept separate so the installer and offline tampered fixtures exercise the same checksum path.
 set -eu
 
 fail() {

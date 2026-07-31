@@ -3,6 +3,7 @@
 set -eu
 
 REPO="getsotto/sotto"
+# Resolve helpers beside this script because callers may run the installer from any directory.
 script_dir="$(CDPATH= cd "$(dirname "$0")" && pwd)"
 
 say() {
