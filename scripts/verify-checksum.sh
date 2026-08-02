@@ -14,7 +14,7 @@ asset="${asset_path##*/}"
 
 expected="$({
     awk -v asset="$asset" \
-        '$2 == asset { hash = tolower($1); found++ } END { if (found == 1) print hash; else exit 1 }' \
+        'NF == 2 && length($1) == 64 && $1 ~ /^[0-9a-fA-F]+$/ && ($2 == asset || $2 == "*" asset) { hash = tolower($1); found++ } END { if (found == 1) print hash; else exit 1 }' \
         "$sums_path"
 })" || fail "$asset must appear exactly once in SHA256SUMS"
 

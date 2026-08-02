@@ -223,6 +223,22 @@ jobs:
           cp .github/fixtures/checksum/sotto-fixture "$fixture"
           printf 'tampered\n' >> "$fixture"
 
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            # macOS also ships sha256sum; restrict PATH so this leg proves the shasum fallback.
+            checksum_bin="$RUNNER_TEMP/checksum-bin"
+            mkdir -p "$checksum_bin"
+            ln -s "$(command -v shasum)" "$checksum_bin/shasum"
+            ln -s "$(command -v awk)" "$checksum_bin/awk"
+            export PATH="$checksum_bin"
+          fi
+
+          valid_fixture="$RUNNER_TEMP/sotto-fixture-valid"
+          cp .github/fixtures/checksum/sotto-fixture "$valid_fixture"
+          printf '%s\n' \
+            'e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  *sotto-fixture-valid' \
+            > "$RUNNER_TEMP/SHA256SUMS-binary"
+          PATH="$PATH" scripts/verify-checksum.sh "$valid_fixture" "$RUNNER_TEMP/SHA256SUMS-binary"
+
           set +e
           output="$(scripts/verify-checksum.sh \
             "$fixture" .github/fixtures/checksum/SHA256SUMS 2>&1)"
@@ -236,6 +252,26 @@ jobs:
           sums="$RUNNER_TEMP/SHA256SUMS"
           printf '%s\n' \
             'e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  other-file' \
+            > "$sums"
+          set +e
+          output="$(scripts/verify-checksum.sh "$fixture" "$sums" 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          test "$output" = 'error: sotto-fixture must appear exactly once in SHA256SUMS'
+
+          printf '%s\n' \
+            'e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  sotto-fixture extrajunk' \
+            > "$sums"
+          set +e
+          output="$(scripts/verify-checksum.sh "$fixture" "$sums" 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          test "$output" = 'error: sotto-fixture must appear exactly once in SHA256SUMS'
+
+          printf '%s\n' \
+            'not-a-valid-sha256  sotto-fixture' \
             > "$sums"
           set +e
           output="$(scripts/verify-checksum.sh "$fixture" "$sums" 2>&1)"
@@ -264,6 +300,12 @@ jobs:
           Copy-Item .github/fixtures/checksum/sotto-fixture $Fixture
           Add-Content -NoNewline -Path $Fixture -Value "tampered"
           $Expected = "error: checksum verification failed for sotto-fixture"
+
+          $ValidFixture = Join-Path $env:RUNNER_TEMP "sotto-fixture-valid"
+          Copy-Item .github/fixtures/checksum/sotto-fixture $ValidFixture
+          $BinaryManifest = Join-Path $env:RUNNER_TEMP "SHA256SUMS-binary"
+          Set-Content -Path $BinaryManifest -Value "e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  *sotto-fixture-valid"
+          & scripts/verify-checksum.ps1 -AssetPath $ValidFixture -SumsPath $BinaryManifest
 
           try {
             & scripts/verify-checksum.ps1 `
@@ -298,6 +340,26 @@ jobs:
           } catch {
             if ($_.Exception.Message -ne $ExpectedManifest) {
               throw "unexpected duplicate manifest error: $($_.Exception.Message)"
+            }
+          }
+
+          Set-Content -Path $Manifest -Value "e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  sotto-fixture extrajunk"
+          try {
+            & scripts/verify-checksum.ps1 -AssetPath $Fixture -SumsPath $Manifest
+            throw "checksum helper accepted a trailing-junk entry"
+          } catch {
+            if ($_.Exception.Message -ne $ExpectedManifest) {
+              throw "unexpected trailing-junk error: $($_.Exception.Message)"
+            }
+          }
+
+          Set-Content -Path $Manifest -Value "not-a-valid-sha256  sotto-fixture"
+          try {
+            & scripts/verify-checksum.ps1 -AssetPath $Fixture -SumsPath $Manifest
+            throw "checksum helper accepted a malformed hash"
+          } catch {
+            if ($_.Exception.Message -ne $ExpectedManifest) {
+              throw "unexpected malformed-hash error: $($_.Exception.Message)"
             }
           }
 
