@@ -31,7 +31,7 @@ env:
 
 jobs:
   validate:
-    name: Validate release
+    name: validate-release
     runs-on: ubuntu-latest
     steps:
       # Full history and tags are required for the ancestry and forward-version guards below.
@@ -90,12 +90,12 @@ jobs:
           fi
 
   test:
-    name: Test action
+    name: test-action
     needs: validate
     uses: ./.github/workflows/test.yml
 
   release:
-    name: Publish release
+    name: publish-release
     needs: [validate, test]
     runs-on: ubuntu-latest
     # This job creates the exact release and updates the major convenience tag.
