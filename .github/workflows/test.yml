@@ -304,6 +304,7 @@ jobs:
 
           $ValidFixture = Join-Path $env:RUNNER_TEMP "sotto-fixture-valid"
           Copy-Item .github/fixtures/checksum/sotto-fixture $ValidFixture
+          # Exercise the binary marker and padded whitespace through the Windows helper.
           $BinaryManifest = Join-Path $env:RUNNER_TEMP "SHA256SUMS-binary"
           $ValidHash = (Get-FileHash -Algorithm SHA256 -Path $ValidFixture).Hash.ToLowerInvariant()
           Set-Content -Path $BinaryManifest -Value "  $ValidHash  *sotto-fixture-valid  "
@@ -320,6 +321,7 @@ jobs:
             }
           }
 
+          # Exercise the manifest cardinality guard separately from the digest mismatch above.
           $Manifest = Join-Path $env:RUNNER_TEMP "SHA256SUMS"
           Set-Content -Path $Manifest -Value "e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  other-file"
           $ExpectedManifest = "error: sotto-fixture must appear exactly once in SHA256SUMS"
