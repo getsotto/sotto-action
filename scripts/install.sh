@@ -4,6 +4,7 @@ set -eu
 
 REPO="getsotto/sotto"
 # Resolve helpers beside this script because callers may run the installer from any directory.
+# Clear CDPATH so a caller's shell settings cannot print a directory into the captured path.
 script_dir="$(CDPATH= cd "$(dirname "$0")" && pwd)"
 
 say() {
