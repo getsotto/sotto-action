@@ -81,10 +81,8 @@ jobs:
             fi
           fi
 
-          # Commit ancestry is checked independently of version ordering so the major tag can never move to
-          # an older main commit even if a larger version number is dispatched by mistake.
-          if git rev-parse --verify --quiet "${ACTION_MAJOR_TAG}^{commit}" >/dev/null && \
-            ! git merge-base --is-ancestor "${ACTION_MAJOR_TAG}^{commit}" "$GITHUB_SHA"; then
+          # The major tag exists from the guard above; check its ancestry independently of version ordering.
+          if ! git merge-base --is-ancestor "${ACTION_MAJOR_TAG}^{commit}" "$GITHUB_SHA"; then
             echo "error: ${ACTION_MAJOR_TAG} does not point to an ancestor of $GITHUB_SHA" >&2
             exit 1
           fi
