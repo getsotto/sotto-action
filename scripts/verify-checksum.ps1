@@ -17,9 +17,9 @@ function Fail([string] $Message) {
 $Asset = Split-Path -Leaf $AssetPath
 $ExpectedHashes = @()
 foreach ($Line in Get-Content -Path $SumsPath) {
-    $Parts = $Line -split '\s+', 2
+    $Parts = $Line.Trim() -split '\s+', 2
     if ($Parts.Count -eq 2 -and $Parts[0] -match '^[0-9a-fA-F]{64}$') {
-        $EntryName = $Parts[1]
+        $EntryName = $Parts[1].Trim()
         if ($EntryName.StartsWith('*')) {
             $EntryName = $EntryName.Substring(1)
         }

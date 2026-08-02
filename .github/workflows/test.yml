@@ -226,7 +226,7 @@ jobs:
           valid_fixture="$RUNNER_TEMP/sotto-fixture-valid"
           cp .github/fixtures/checksum/sotto-fixture "$valid_fixture"
           printf '%s\n' \
-            'e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  *sotto-fixture-valid' \
+            '  e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  *sotto-fixture-valid  ' \
             > "$RUNNER_TEMP/SHA256SUMS-binary"
 
           if [ "$RUNNER_OS" = "macOS" ]; then
@@ -306,7 +306,7 @@ jobs:
           Copy-Item .github/fixtures/checksum/sotto-fixture $ValidFixture
           $BinaryManifest = Join-Path $env:RUNNER_TEMP "SHA256SUMS-binary"
           $ValidHash = (Get-FileHash -Algorithm SHA256 -Path $ValidFixture).Hash.ToLowerInvariant()
-          Set-Content -Path $BinaryManifest -Value "$ValidHash  *sotto-fixture-valid"
+          Set-Content -Path $BinaryManifest -Value "  $ValidHash  *sotto-fixture-valid  "
           & scripts/verify-checksum.ps1 -AssetPath $ValidFixture -SumsPath $BinaryManifest
 
           try {
