@@ -1,5 +1,5 @@
-# Publishes an immutable action release, then moves the matching major convenience tag only after
-# the full action test matrix succeeds. Dispatch this workflow from main with the exact release tag.
+# Publishes an immutable `v1.x.y` action release, then moves the `v1` major convenience tag only
+# after the full action test matrix succeeds. Dispatch this workflow from main with the exact tag.
 
 name: release
 
@@ -7,8 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact v1 action release tag
+        description: Exact action release tag (vMAJOR.MINOR.PATCH)
         required: true
+        # v1.1.0 is the first numbered release; the existing v1 tag remains the moving bootstrap tag.
         default: v1.1.0
         type: string
 
@@ -17,12 +18,16 @@ on:
 permissions:
   contents: read
 
-# All action releases share one queue because each successful run may move the same v1 tag. GitHub
+# All action releases share one queue because each successful run may move the same major tag. GitHub
 # keeps one active and one pending run; a newer pending dispatch may replace an older pending run,
 # but it must never cancel an active run after that run has created the immutable release.
 concurrency:
   group: action-release
   cancel-in-progress: false
+
+# Keep the moving major tag separate from the exact release tag supplied at dispatch time.
+env:
+  ACTION_MAJOR_TAG: v1
 
 jobs:
   validate:
@@ -41,8 +46,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ ! "$RELEASE_TAG" =~ ^v1\.[0-9]+\.[0-9]+$ ]]; then
-            echo "error: version must be an exact v1 action release such as v1.1.0" >&2
+          if [[ ! "$RELEASE_TAG" =~ ^${ACTION_MAJOR_TAG}\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: version must be an exact ${ACTION_MAJOR_TAG} action release such as ${ACTION_MAJOR_TAG}.1.0" >&2
             exit 1
           fi
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then
@@ -52,8 +57,8 @@ jobs:
 
           # Refresh remote tags explicitly so version and ancestry guards cannot use stale refs.
           git fetch --force origin '+refs/tags/*:refs/tags/*'
-          if ! git rev-parse --verify --quiet 'v1^{commit}' >/dev/null; then
-            echo "error: remote v1 convenience tag is missing" >&2
+          if ! git rev-parse --verify --quiet "${ACTION_MAJOR_TAG}^{commit}" >/dev/null; then
+            echo "error: remote ${ACTION_MAJOR_TAG} convenience tag is missing" >&2
             exit 1
           fi
 
@@ -66,21 +71,21 @@ jobs:
           fi
 
           # Before the first exact release, grep has no match; treat that as an empty history.
-          latest="$(git tag --list 'v1.*.*' | \
-            grep -E '^v1\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+          latest="$(git tag --list "${ACTION_MAJOR_TAG}.*.*" | \
+            grep -E "^${ACTION_MAJOR_TAG}\.[0-9]+\.[0-9]+$" | sort -V | tail -n 1 || true)"
           if [ -n "$latest" ]; then
             newest="$(printf '%s\n%s\n' "$latest" "$RELEASE_TAG" | sort -V | tail -n 1)"
             if [ "$newest" != "$RELEASE_TAG" ]; then
-              echo "error: $RELEASE_TAG would move v1 backwards from $latest" >&2
+              echo "error: $RELEASE_TAG would move $ACTION_MAJOR_TAG backwards from $latest" >&2
               exit 1
             fi
           fi
 
-          # Commit ancestry is checked independently of version ordering so v1 can never move to
+          # Commit ancestry is checked independently of version ordering so the major tag can never move to
           # an older main commit even if a larger version number is dispatched by mistake.
-          if git rev-parse --verify --quiet 'v1^{commit}' >/dev/null && \
-            ! git merge-base --is-ancestor 'v1^{commit}' "$GITHUB_SHA"; then
-            echo "error: v1 does not point to an ancestor of $GITHUB_SHA" >&2
+          if git rev-parse --verify --quiet "${ACTION_MAJOR_TAG}^{commit}" >/dev/null && \
+            ! git merge-base --is-ancestor "${ACTION_MAJOR_TAG}^{commit}" "$GITHUB_SHA"; then
+            echo "error: ${ACTION_MAJOR_TAG} does not point to an ancestor of $GITHUB_SHA" >&2
             exit 1
           fi
 
@@ -93,7 +98,7 @@ jobs:
     name: Publish release
     needs: [validate, test]
     runs-on: ubuntu-latest
-    # This job creates the exact release and updates the v1 convenience tag.
+    # This job creates the exact release and updates the major convenience tag.
     permissions:
       contents: write
     steps:
@@ -129,7 +134,7 @@ jobs:
             gh release create "$RELEASE_TAG" --verify-tag --generate-notes --latest
           fi
 
-      - name: Move v1 after release validation
+      - name: Move major tag after release validation
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -139,25 +144,25 @@ jobs:
 
           # Recheck the release and ancestry immediately before the only destructive operation.
           gh release view "$RELEASE_TAG" >/dev/null
-          if ! git rev-parse --verify --quiet 'v1^{commit}' >/dev/null; then
-            echo "error: remote v1 convenience tag is missing" >&2
+          if ! git rev-parse --verify --quiet "${ACTION_MAJOR_TAG}^{commit}" >/dev/null; then
+            echo "error: remote ${ACTION_MAJOR_TAG} convenience tag is missing" >&2
             exit 1
           fi
-          if ! git merge-base --is-ancestor 'v1^{commit}' "$GITHUB_SHA"; then
-            echo "error: refusing to move v1 backwards" >&2
+          if ! git merge-base --is-ancestor "${ACTION_MAJOR_TAG}^{commit}" "$GITHUB_SHA"; then
+            echo "error: refusing to move ${ACTION_MAJOR_TAG} backwards" >&2
             exit 1
           fi
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git tag -fa v1 "$GITHUB_SHA" -m "v1 tracks $RELEASE_TAG"
-          git push origin refs/tags/v1 --force
+          git tag -fa "$ACTION_MAJOR_TAG" "$GITHUB_SHA" -m "$ACTION_MAJOR_TAG tracks $RELEASE_TAG"
+          git push origin "refs/tags/$ACTION_MAJOR_TAG" --force
 
-          # The repository already has a v1 GitHub Release. Keep its notes consistent with the
+          # The repository already has a major-tag GitHub Release. Keep its notes consistent with the
           # moved tag while the exact release remains the canonical, latest release record.
-          if gh release view v1 >/dev/null 2>&1; then
-            gh release edit v1 \
-              --title v1 \
-              --notes "Tracks the latest validated v1 release: $RELEASE_TAG." \
+          if gh release view "$ACTION_MAJOR_TAG" >/dev/null 2>&1; then
+            gh release edit "$ACTION_MAJOR_TAG" \
+              --title "$ACTION_MAJOR_TAG" \
+              --notes "Tracks the latest validated $ACTION_MAJOR_TAG release: $RELEASE_TAG." \
               --latest=false
           fi
