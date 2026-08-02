@@ -305,7 +305,7 @@ jobs:
           $ValidFixture = Join-Path $env:RUNNER_TEMP "sotto-fixture-valid"
           Copy-Item .github/fixtures/checksum/sotto-fixture $ValidFixture
           $BinaryManifest = Join-Path $env:RUNNER_TEMP "SHA256SUMS-binary"
-          $ValidHash = (Get-FileHash -Algorithm SHA256 -Path $ValidFixture).Hash
+          $ValidHash = (Get-FileHash -Algorithm SHA256 -Path $ValidFixture).Hash.ToLowerInvariant()
           Set-Content -Path $BinaryManifest -Value "$ValidHash  *sotto-fixture-valid"
           & scripts/verify-checksum.ps1 -AssetPath $ValidFixture -SumsPath $BinaryManifest
 

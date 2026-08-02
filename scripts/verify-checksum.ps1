@@ -24,7 +24,7 @@ foreach ($Line in Get-Content -Path $SumsPath) {
             $EntryName = $EntryName.Substring(1)
         }
         if ($EntryName -eq $Asset) {
-            $ExpectedHashes += $Parts[0]
+            $ExpectedHashes += $Parts[0].ToLowerInvariant()
         }
     }
 }
@@ -32,7 +32,7 @@ if ($ExpectedHashes.Count -ne 1) {
     Fail "$Asset must appear exactly once in SHA256SUMS"
 }
 
-$ActualHash = (Get-FileHash -Algorithm SHA256 -Path $AssetPath).Hash
+$ActualHash = (Get-FileHash -Algorithm SHA256 -Path $AssetPath).Hash.ToLowerInvariant()
 if ($ActualHash -ne $ExpectedHashes[0]) {
     Fail "checksum verification failed for $Asset"
 }
