@@ -223,6 +223,12 @@ jobs:
           cp .github/fixtures/checksum/sotto-fixture "$fixture"
           printf 'tampered\n' >> "$fixture"
 
+          valid_fixture="$RUNNER_TEMP/sotto-fixture-valid"
+          cp .github/fixtures/checksum/sotto-fixture "$valid_fixture"
+          printf '%s\n' \
+            'e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  *sotto-fixture-valid' \
+            > "$RUNNER_TEMP/SHA256SUMS-binary"
+
           if [ "$RUNNER_OS" = "macOS" ]; then
             # macOS also ships sha256sum; restrict PATH so this leg proves the shasum fallback.
             checksum_bin="$RUNNER_TEMP/checksum-bin"
@@ -232,11 +238,6 @@ jobs:
             export PATH="$checksum_bin"
           fi
 
-          valid_fixture="$RUNNER_TEMP/sotto-fixture-valid"
-          cp .github/fixtures/checksum/sotto-fixture "$valid_fixture"
-          printf '%s\n' \
-            'e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  *sotto-fixture-valid' \
-            > "$RUNNER_TEMP/SHA256SUMS-binary"
           PATH="$PATH" scripts/verify-checksum.sh "$valid_fixture" "$RUNNER_TEMP/SHA256SUMS-binary"
 
           set +e

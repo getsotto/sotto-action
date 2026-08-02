@@ -17,8 +17,14 @@ function Fail([string] $Message) {
 $Asset = Split-Path -Leaf $AssetPath
 $ExpectedHashes = @()
 foreach ($Line in Get-Content -Path $SumsPath) {
-    if ($Line -match '^([0-9a-fA-F]{64})\s+(\*?)(.+)$' -and $Matches[3] -eq $Asset) {
-        $ExpectedHashes += $Matches[1]
+    if ($Line -match '^([0-9a-fA-F]{64})\s+(\*?.+)$') {
+        $EntryName = $Matches[2]
+        if ($EntryName.StartsWith('*')) {
+            $EntryName = $EntryName.Substring(1)
+        }
+        if ($EntryName -eq $Asset) {
+            $ExpectedHashes += $Matches[1]
+        }
     }
 }
 if ($ExpectedHashes.Count -ne 1) {
