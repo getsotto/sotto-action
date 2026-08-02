@@ -90,6 +90,7 @@ try {
     }
     Write-Host "signatures verified"
 
+    # Resolve the helper beside this script so callers may invoke the installer from any directory.
     & (Join-Path $PSScriptRoot "verify-checksum.ps1") `
         -AssetPath $ArchivePath `
         -SumsPath $SumsPath
