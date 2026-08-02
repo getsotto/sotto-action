@@ -143,6 +143,7 @@ jobs:
           set -euo pipefail
 
           # Recheck the release and ancestry immediately before the only destructive operation.
+          git fetch --force origin '+refs/tags/*:refs/tags/*'
           gh release view "$RELEASE_TAG" >/dev/null
           if ! git rev-parse --verify --quiet "${ACTION_MAJOR_TAG}^{commit}" >/dev/null; then
             echo "error: remote ${ACTION_MAJOR_TAG} convenience tag is missing" >&2
