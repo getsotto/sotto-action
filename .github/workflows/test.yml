@@ -14,6 +14,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The release workflow reuses the identical matrix before it creates or moves any tag.
+  workflow_call:
 
 env:
   SOTTO_TEST_VERSION: v0.4.0
@@ -46,7 +48,7 @@ jobs:
             value: v0.4.0.
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Check Linux validation errors
         if: runner.os != 'Windows'
@@ -147,7 +149,7 @@ jobs:
         runner: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # The archive 404s before signature verification. A fake cosign only satisfies the
       # installer's precondition, isolating the missing-release path from another download.
@@ -202,6 +204,169 @@ jobs:
             }
           }
 
+  reject-tampered-checksum:
+    name: reject-tampered-checksum (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Check Linux/macOS checksum errors
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/sotto-fixture"
+          cp .github/fixtures/checksum/sotto-fixture "$fixture"
+          printf 'tampered\n' >> "$fixture"
+
+          valid_fixture="$RUNNER_TEMP/sotto-fixture-valid"
+          cp .github/fixtures/checksum/sotto-fixture "$valid_fixture"
+          printf '%s\n' \
+            '  e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  *sotto-fixture-valid  ' \
+            > "$RUNNER_TEMP/SHA256SUMS-binary"
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            # macOS also ships sha256sum; restrict PATH so this leg proves the shasum fallback.
+            checksum_bin="$RUNNER_TEMP/checksum-bin"
+            mkdir -p "$checksum_bin"
+            ln -s "$(command -v shasum)" "$checksum_bin/shasum"
+            ln -s "$(command -v awk)" "$checksum_bin/awk"
+            export PATH="$checksum_bin"
+          fi
+
+          PATH="$PATH" scripts/verify-checksum.sh "$valid_fixture" "$RUNNER_TEMP/SHA256SUMS-binary"
+
+          set +e
+          output="$(scripts/verify-checksum.sh \
+            "$fixture" .github/fixtures/checksum/SHA256SUMS 2>&1)"
+          status=$?
+          set -e
+
+          test "$status" -ne 0
+          test "$output" = 'error: checksum verification failed for sotto-fixture'
+
+          # Exercise the manifest cardinality guard separately from the digest mismatch above.
+          sums="$RUNNER_TEMP/SHA256SUMS"
+          printf '%s\n' \
+            'e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  other-file' \
+            > "$sums"
+          set +e
+          output="$(scripts/verify-checksum.sh "$fixture" "$sums" 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          test "$output" = 'error: sotto-fixture must appear exactly once in SHA256SUMS'
+
+          printf '%s\n' \
+            'e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  sotto-fixture extrajunk' \
+            > "$sums"
+          set +e
+          output="$(scripts/verify-checksum.sh "$fixture" "$sums" 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          test "$output" = 'error: sotto-fixture must appear exactly once in SHA256SUMS'
+
+          printf '%s\n' \
+            'not-a-valid-sha256  sotto-fixture' \
+            > "$sums"
+          set +e
+          output="$(scripts/verify-checksum.sh "$fixture" "$sums" 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          test "$output" = 'error: sotto-fixture must appear exactly once in SHA256SUMS'
+
+          printf '%s\n%s\n' \
+            'e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  sotto-fixture' \
+            'e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  sotto-fixture' \
+            > "$sums"
+          set +e
+          output="$(scripts/verify-checksum.sh "$fixture" "$sums" 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          test "$output" = 'error: sotto-fixture must appear exactly once in SHA256SUMS'
+
+      - name: Check Windows checksum errors
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $Fixture = Join-Path $env:RUNNER_TEMP "sotto-fixture"
+          Copy-Item .github/fixtures/checksum/sotto-fixture $Fixture
+          Add-Content -NoNewline -Path $Fixture -Value "tampered"
+          $Expected = "error: checksum verification failed for sotto-fixture"
+
+          $ValidFixture = Join-Path $env:RUNNER_TEMP "sotto-fixture-valid"
+          Copy-Item .github/fixtures/checksum/sotto-fixture $ValidFixture
+          # Exercise the binary marker and padded whitespace through the Windows helper.
+          $BinaryManifest = Join-Path $env:RUNNER_TEMP "SHA256SUMS-binary"
+          $ValidHash = (Get-FileHash -Algorithm SHA256 -Path $ValidFixture).Hash.ToLowerInvariant()
+          Set-Content -Path $BinaryManifest -Value "  $ValidHash  *sotto-fixture-valid  "
+          & scripts/verify-checksum.ps1 -AssetPath $ValidFixture -SumsPath $BinaryManifest
+
+          try {
+            & scripts/verify-checksum.ps1 `
+              -AssetPath $Fixture `
+              -SumsPath .github/fixtures/checksum/SHA256SUMS
+            throw "checksum helper accepted a tampered fixture"
+          } catch {
+            if ($_.Exception.Message -ne $Expected) {
+              throw "unexpected checksum error: $($_.Exception.Message)"
+            }
+          }
+
+          # Exercise the manifest cardinality guard separately from the digest mismatch above.
+          $Manifest = Join-Path $env:RUNNER_TEMP "SHA256SUMS"
+          Set-Content -Path $Manifest -Value "e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  other-file"
+          $ExpectedManifest = "error: sotto-fixture must appear exactly once in SHA256SUMS"
+          try {
+            & scripts/verify-checksum.ps1 -AssetPath $Fixture -SumsPath $Manifest
+            throw "checksum helper accepted a missing fixture entry"
+          } catch {
+            if ($_.Exception.Message -ne $ExpectedManifest) {
+              throw "unexpected manifest error: $($_.Exception.Message)"
+            }
+          }
+
+          Set-Content -Path $Manifest -Value @(
+            "e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  sotto-fixture"
+            "e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  sotto-fixture"
+          )
+          try {
+            & scripts/verify-checksum.ps1 -AssetPath $Fixture -SumsPath $Manifest
+            throw "checksum helper accepted duplicate fixture entries"
+          } catch {
+            if ($_.Exception.Message -ne $ExpectedManifest) {
+              throw "unexpected duplicate manifest error: $($_.Exception.Message)"
+            }
+          }
+
+          Set-Content -Path $Manifest -Value "e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f  sotto-fixture extrajunk"
+          try {
+            & scripts/verify-checksum.ps1 -AssetPath $Fixture -SumsPath $Manifest
+            throw "checksum helper accepted a trailing-junk entry"
+          } catch {
+            if ($_.Exception.Message -ne $ExpectedManifest) {
+              throw "unexpected trailing-junk error: $($_.Exception.Message)"
+            }
+          }
+
+          Set-Content -Path $Manifest -Value "not-a-valid-sha256  sotto-fixture"
+          try {
+            & scripts/verify-checksum.ps1 -AssetPath $Fixture -SumsPath $Manifest
+            throw "checksum helper accepted a malformed hash"
+          } catch {
+            if ($_.Exception.Message -ne $ExpectedManifest) {
+              throw "unexpected malformed-hash error: $($_.Exception.Message)"
+            }
+          }
+
   install-and-verify:
     strategy:
       fail-fast: false
@@ -219,7 +384,7 @@ jobs:
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - id: sotto
         name: Install sotto
         uses: ./

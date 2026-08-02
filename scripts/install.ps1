@@ -90,20 +90,10 @@ try {
     }
     Write-Host "signatures verified"
 
-    $ExpectedHashes = @()
-    foreach ($Line in Get-Content -Path $SumsPath) {
-        if ($Line -match '^([0-9a-fA-F]{64})\s+\*?(.+)$' -and $Matches[2] -eq $Asset) {
-            $ExpectedHashes += $Matches[1]
-        }
-    }
-    if ($ExpectedHashes.Count -ne 1) {
-        Fail "$Asset must appear exactly once in SHA256SUMS"
-    }
-
-    $ActualHash = (Get-FileHash -Algorithm SHA256 -Path $ArchivePath).Hash
-    if ($ActualHash -ne $ExpectedHashes[0]) {
-        Fail "checksum verification failed for $Asset"
-    }
+    # Resolve the helper beside this script so callers may invoke the installer from any directory.
+    & (Join-Path $PSScriptRoot "verify-checksum.ps1") `
+        -AssetPath $ArchivePath `
+        -SumsPath $SumsPath
     Write-Host "checksum verified"
 
     Expand-Archive -Path $ArchivePath -DestinationPath $Tmp -Force
