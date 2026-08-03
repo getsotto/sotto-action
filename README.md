@@ -55,6 +55,9 @@ release can never silently change your CI's behaviour.
 
 ### Outputs
 
+The inputs and outputs below describe the merged v1.1 implementation used in these examples. A
+mutable ref such as `@v1` may point to an older action until the release workflow moves it.
+
 Give the step an `id` to use the resolved installation details in later steps:
 
 ```yaml
@@ -105,7 +108,7 @@ Review the resolved commit before copying it into a workflow. Do not use a short
 
 ## Security model
 
-The action is deliberately small and fails closed:
+The merged v1.1 implementation is deliberately small and fails closed:
 
 - It rejects missing, floating, partial, or prerelease CLI versions before downloading anything.
 - It downloads the selected archive, its checksum manifest, and their Sigstore bundles.
