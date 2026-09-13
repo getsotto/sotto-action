@@ -425,6 +425,14 @@ jobs:
           cp .github/fixtures/checksum/SHA256SUMS "$spaced_dir/SHA256SUMS"
           root="$PWD"
 
+          # A valid sotto-fixture copy for the multi-file manifests below; the other files
+          # those manifests list are deliberately never created because only the requested
+          # asset is hashed.
+          multi_dir="$RUNNER_TEMP/multi"
+          mkdir -p "$multi_dir"
+          multi_fixture="$multi_dir/sotto-fixture"
+          cp .github/fixtures/checksum/sotto-fixture "$multi_fixture"
+
           if [ "$RUNNER_OS" = "macOS" ]; then
             # macOS also ships sha256sum; restrict PATH so this leg proves the shasum fallback.
             checksum_bin="$RUNNER_TEMP/checksum-bin"
@@ -483,6 +491,47 @@ jobs:
             > "$sums"
           set +e
           output="$(scripts/verify-checksum.sh "$fixture" "$sums" 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          test "$output" = 'error: sotto-fixture must appear exactly once in SHA256SUMS'
+
+          # Real release manifests list several files, so the helper must select the exact
+          # asset name while ignoring unrelated and near-match entries wherever they appear.
+          fixture_sum='e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f'
+          near_sum='b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c'
+          other_sum='2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae'
+          multi_sums="$RUNNER_TEMP/SHA256SUMS-multi"
+
+          printf '%s\n%s\n%s\n' \
+            "$fixture_sum  sotto-fixture" \
+            "$near_sum  sotto-fixture.sigstore.json" \
+            "$other_sum  sotto-v0.4.0-aarch64-apple-darwin.tar.gz" \
+            > "$multi_sums"
+          scripts/verify-checksum.sh "$multi_fixture" "$multi_sums"
+
+          printf '%s\n%s\n%s\n' \
+            "$near_sum  sotto-fixture.sigstore.json" \
+            "$fixture_sum  sotto-fixture" \
+            "$other_sum  sotto-v0.4.0-aarch64-apple-darwin.tar.gz" \
+            > "$multi_sums"
+          scripts/verify-checksum.sh "$multi_fixture" "$multi_sums"
+
+          # The entry in last position also carries the binary-mode '*' marker.
+          printf '%s\n%s\n%s\n' \
+            "$other_sum  sotto-v0.4.0-aarch64-apple-darwin.tar.gz" \
+            "$near_sum  sotto-fixture.sigstore.json" \
+            "$fixture_sum  *sotto-fixture" \
+            > "$multi_sums"
+          scripts/verify-checksum.sh "$multi_fixture" "$multi_sums"
+
+          # A manifest with only near-match and unrelated names misses the asset entirely.
+          printf '%s\n%s\n' \
+            "$near_sum  sotto-fixture.sigstore.json" \
+            "$other_sum  sotto-v0.4.0-aarch64-apple-darwin.tar.gz" \
+            > "$multi_sums"
+          set +e
+          output="$(scripts/verify-checksum.sh "$multi_fixture" "$multi_sums" 2>&1)"
           status=$?
           set -e
           test "$status" -ne 0
@@ -573,6 +622,55 @@ jobs:
           } catch {
             if ($_.Exception.Message -ne $ExpectedManifest) {
               throw "unexpected malformed-hash error: $($_.Exception.Message)"
+            }
+          }
+
+          # Real release manifests list several files, so the helper must select the exact
+          # asset name while ignoring unrelated and near-match entries wherever they appear.
+          # The other listed files do not exist locally: only the requested asset is hashed.
+          $MultiDir = Join-Path $env:RUNNER_TEMP "multi"
+          New-Item -ItemType Directory -Path $MultiDir | Out-Null
+          $MultiFixture = Join-Path $MultiDir "sotto-fixture"
+          Copy-Item .github/fixtures/checksum/sotto-fixture $MultiFixture
+          $MultiManifest = Join-Path $env:RUNNER_TEMP "SHA256SUMS-multi"
+          # Normalise case explicitly because the working copy's line endings can vary.
+          $MultiHash = (Get-FileHash -Algorithm SHA256 -Path $MultiFixture).Hash.ToLowerInvariant()
+          $NearSum = "b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c"
+          $OtherSum = "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+
+          Set-Content -Path $MultiManifest -Value @(
+            "$MultiHash  sotto-fixture"
+            "$NearSum  sotto-fixture.sigstore.json"
+            "$OtherSum  sotto-v0.4.0-aarch64-apple-darwin.tar.gz"
+          )
+          & scripts/verify-checksum.ps1 -AssetPath $MultiFixture -SumsPath $MultiManifest
+
+          Set-Content -Path $MultiManifest -Value @(
+            "$NearSum  sotto-fixture.sigstore.json"
+            "$MultiHash  sotto-fixture"
+            "$OtherSum  sotto-v0.4.0-aarch64-apple-darwin.tar.gz"
+          )
+          & scripts/verify-checksum.ps1 -AssetPath $MultiFixture -SumsPath $MultiManifest
+
+          # The entry in last position also carries the binary-mode '*' marker.
+          Set-Content -Path $MultiManifest -Value @(
+            "$OtherSum  sotto-v0.4.0-aarch64-apple-darwin.tar.gz"
+            "$NearSum  sotto-fixture.sigstore.json"
+            "$MultiHash  *sotto-fixture"
+          )
+          & scripts/verify-checksum.ps1 -AssetPath $MultiFixture -SumsPath $MultiManifest
+
+          # A manifest with only near-match and unrelated names misses the asset entirely.
+          Set-Content -Path $MultiManifest -Value @(
+            "$NearSum  sotto-fixture.sigstore.json"
+            "$OtherSum  sotto-v0.4.0-aarch64-apple-darwin.tar.gz"
+          )
+          try {
+            & scripts/verify-checksum.ps1 -AssetPath $MultiFixture -SumsPath $MultiManifest
+            throw "checksum helper accepted a manifest without the asset"
+          } catch {
+            if ($_.Exception.Message -ne $ExpectedManifest) {
+              throw "unexpected multi-file manifest error: $($_.Exception.Message)"
             }
           }
 
