@@ -273,8 +273,10 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      # The archive 404s before signature verification. A fake cosign only satisfies the
-      # installer's precondition, isolating the missing-release path from another download.
+      # The archive 404s before signature verification. A fake cosign satisfies the installer's
+      # precondition while a fake curl replays curl's 404 shape (nonzero exit status and 404 as
+      # the -w output), so this error path never touches the network. The request log proves
+      # the installer stops at the first missing asset.
       - name: Check Linux missing release error
         if: runner.os != 'Windows'
         shell: bash
@@ -284,23 +286,51 @@ jobs:
           mkdir -p "$fake_bin"
           ln -s /usr/bin/true "$fake_bin/cosign"
 
+          request_log="$RUNNER_TEMP/curl-requests"
+          printf '%s\n' \
+            '#!/bin/sh' \
+            'for url in "$@"; do' \
+            '  case "$url" in http*) printf "%s\n" "$url" >> "$CURL_REQUEST_LOG" ;;' \
+            '  esac' \
+            'done' \
+            'printf 404' \
+            'exit 22' \
+            > "$fake_bin/curl"
+          chmod +x "$fake_bin/curl"
+
+          github_path="$RUNNER_TEMP/github-path"
+          github_output="$RUNNER_TEMP/github-output"
+          install_dir="$RUNNER_TEMP/sotto-bin"
+          printf '%s' path-sentinel > "$github_path"
+          printf '%s' output-sentinel > "$github_output"
+
           set +e
           output="$(
             PATH="$fake_bin:$PATH" \
+            CURL_REQUEST_LOG="$request_log" \
             SOTTO_VERSION=v999.999.999 \
-            SOTTO_INSTALL_DIR="$RUNNER_TEMP/sotto-bin" \
-            GITHUB_PATH="$RUNNER_TEMP/github-path" \
-            GITHUB_OUTPUT="$RUNNER_TEMP/github-output" \
+            SOTTO_INSTALL_DIR="$install_dir" \
+            GITHUB_PATH="$github_path" \
+            GITHUB_OUTPUT="$github_output" \
             scripts/install.sh 2>&1
           )"
           status=$?
           set -e
 
-          expected="error: release asset not found: https://github.com/getsotto/sotto/releases/download/v999.999.999/sotto-v999.999.999-x86_64-unknown-linux-gnu.tar.gz"
+          expected_url="https://github.com/getsotto/sotto/releases/download/v999.999.999/sotto-v999.999.999-x86_64-unknown-linux-gnu.tar.gz"
+          expected="error: release asset not found: $expected_url"
           actual="$(printf '%s\n' "$output" | tail -n 1)"
           test "$status" -ne 0
           test "$actual" = "$expected"
+          test "$(cat "$request_log")" = "$expected_url"
+          test ! -e "$install_dir"
+          test "$(cat "$github_path")" = path-sentinel
+          test "$(cat "$github_output")" = output-sentinel
 
+      # A cosign.cmd stub satisfies the installer's precondition while the Invoke-WebRequest
+      # function below replays the 404 shape the installer's download helper inspects, so this
+      # error path never touches the network. The request log proves the installer stops at the
+      # first missing asset.
       - name: Check Windows missing release error
         if: runner.os == 'Windows'
         shell: pwsh
@@ -310,12 +340,32 @@ jobs:
           New-Item -ItemType Directory -Path $FakeBin | Out-Null
           Set-Content -Path (Join-Path $FakeBin "cosign.cmd") -Value "@exit /b 0" -Encoding ASCII
 
+          $RequestLog = Join-Path $env:RUNNER_TEMP "web-requests"
+          $GithubPath = Join-Path $env:RUNNER_TEMP "github-path"
+          $GithubOutput = Join-Path $env:RUNNER_TEMP "github-output"
+          $InstallDir = Join-Path $env:RUNNER_TEMP "sotto-bin"
+          $PathSentinel = "path-sentinel"
+          $OutputSentinel = "output-sentinel"
+          Set-Content -Path $GithubPath -Value $PathSentinel -NoNewline
+          Set-Content -Path $GithubOutput -Value $OutputSentinel -NoNewline
+
+          # Shadow the cmdlet with the same exception shape a real 404 produces so the
+          # installer's Response.StatusCode check runs without touching the network.
+          function Invoke-WebRequest {
+            param([string] $Uri, [string] $OutFile, [switch] $UseBasicParsing)
+            Add-Content -Path $RequestLog -Value $Uri
+            $Response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::NotFound)
+            throw [Microsoft.PowerShell.Commands.HttpResponseException]::new(
+              "Response status code does not indicate success: 404 (Not Found).", $Response)
+          }
+
           $env:PATH = "$FakeBin;$env:PATH"
           $env:SOTTO_VERSION = "v999.999.999"
-          $env:SOTTO_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "sotto-bin"
-          $env:GITHUB_PATH = Join-Path $env:RUNNER_TEMP "github-path"
-          $env:GITHUB_OUTPUT = Join-Path $env:RUNNER_TEMP "github-output"
-          $Expected = "error: release asset not found: https://github.com/getsotto/sotto/releases/download/v999.999.999/sotto-v999.999.999-x86_64-pc-windows-msvc.zip"
+          $env:SOTTO_INSTALL_DIR = $InstallDir
+          $env:GITHUB_PATH = $GithubPath
+          $env:GITHUB_OUTPUT = $GithubOutput
+          $ExpectedUri = "https://github.com/getsotto/sotto/releases/download/v999.999.999/sotto-v999.999.999-x86_64-pc-windows-msvc.zip"
+          $Expected = "error: release asset not found: $ExpectedUri"
 
           try {
             & scripts/install.ps1
@@ -324,6 +374,19 @@ jobs:
             if ($_.Exception.Message -ne $Expected) {
               throw "unexpected missing release error: $($_.Exception.Message)"
             }
+          }
+
+          if ((Get-Content -Raw $RequestLog).TrimEnd() -ne $ExpectedUri) {
+            throw "installer did not stop at the first missing asset"
+          }
+          if (Test-Path $InstallDir) {
+            throw "installer created an install directory for a missing release"
+          }
+          if ((Get-Content -Raw $GithubPath) -ne $PathSentinel) {
+            throw "installer changed GITHUB_PATH for a missing release"
+          }
+          if ((Get-Content -Raw $GithubOutput) -ne $OutputSentinel) {
+            throw "installer changed GITHUB_OUTPUT for a missing release"
           }
 
   reject-tampered-checksum:
