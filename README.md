@@ -86,13 +86,16 @@ If you need to invoke the installed binary by its absolute path (for example, wh
     sotto-version: v0.4.0
 
 - name: Verify installed binary (Bash)
-  run: "$SOTTO_BINARY_PATH" --version
+  shell: bash
+  run: |
+    "$SOTTO_BINARY_PATH" --version
   env:
     SOTTO_BINARY_PATH: ${{ steps.sotto.outputs.binary-path }}
 
 - name: Verify installed binary (PowerShell)
   shell: pwsh
-  run: & $env:SOTTO_BINARY_PATH --version
+  run: |
+    & $env:SOTTO_BINARY_PATH --version
   env:
     SOTTO_BINARY_PATH: ${{ steps.sotto.outputs.binary-path }}
 ```
