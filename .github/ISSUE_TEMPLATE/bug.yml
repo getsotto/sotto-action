@@ -1,0 +1,31 @@
+name: Bug report
+description: Report a problem with the Sotto GitHub Action
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem you ran into.
+    validations:
+      required: true
+  - type: input
+    id: action-ref
+    attributes:
+      label: Action reference used
+      description: e.g. "@v1.1.0" or a commit SHA
+    validations:
+      required: true
+  - type: input
+    id: sotto-version
+    attributes:
+      label: sotto-version input
+    validations:
+      required: false
+  - type: input
+    id: runner-os
+    attributes:
+      label: Runner OS
+      description: e.g. ubuntu-latest, macos-latest, windows-latest
+    validations:
+      required: true

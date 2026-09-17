@@ -1,0 +1,16 @@
+name: Enhancement
+description: Suggest an improvement to the Sotto GitHub Action
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is the problem?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-approach
+    attributes:
+      label: Proposed approach
+    validations:
+      required: false
