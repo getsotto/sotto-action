@@ -750,3 +750,210 @@ jobs:
           test "$OUTPUT_VERSION" = "$SOTTO_TEST_VERSION"
           test "$OUTPUT_TARGET" = "$EXPECTED_TARGET"
           test -f "$OUTPUT_BINARY_PATH"
+  reject-signature-failures:
+    name: reject-signature-failures (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Exercise signature failure guards with offline fixtures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $Root = $env:GITHUB_WORKSPACE
+          $Installer = Join-Path $Root "scripts/install.ps1"
+          $OriginalPath = $env:PATH
+          $CosignScript = @'
+          @echo off
+          setlocal
+          >>"%COSIGN_LOG%" echo %*
+          echo %* | findstr /C:"%COSIGN_FAIL_TOKEN%" >nul
+          if not errorlevel 1 exit /b 1
+          exit /b 0
+          '@
+
+          function New-Fixture([string] $Directory, [string] $Asset) {
+            New-Item -ItemType Directory -Force -Path $Directory | Out-Null
+            $Archive = Join-Path $Directory $Asset
+            [System.IO.File]::WriteAllText($Archive, "offline archive fixture")
+            Set-Content -Path (Join-Path $Directory "$Asset.sigstore.json") -Value "{}" -NoNewline
+            Set-Content -Path (Join-Path $Directory "SHA256SUMS.sigstore.json") -Value "{}" -NoNewline
+            $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Archive).Hash.ToLowerInvariant()
+            Set-Content -Path (Join-Path $Directory "SHA256SUMS") -Value "$Hash  $Asset" -NoNewline
+          }
+
+          function Invoke-WebRequest {
+            param(
+              [string] $Uri,
+              [string] $OutFile,
+              [switch] $UseBasicParsing
+            )
+            $Name = [System.IO.Path]::GetFileName(([System.Uri] $Uri).AbsolutePath)
+            $Source = Join-Path $env:FIXTURE_DIRECTORY $Name
+            if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
+              throw "unexpected network request or fixture: $Name"
+            }
+            Copy-Item -LiteralPath $Source -Destination $OutFile
+          }
+
+          function Expand-Archive {
+            param(
+              [string] $Path,
+              [string] $DestinationPath,
+              [switch] $Force
+            )
+            Set-Content -Path $env:EXPAND_SENTINEL -Value "Expand-Archive was reached" -NoNewline
+            throw "Expand-Archive was reached before the expected signature failure"
+          }
+
+          function Invoke-InstallerCase {
+            param(
+              [string] $Name,
+              [string] $FailToken,
+              [string] $ExpectedMessage,
+              [int] $ExpectedCalls,
+              [string[]] $ExpectedOrder
+            )
+
+            $CaseRoot = Join-Path $env:RUNNER_TEMP "signature-$Name"
+            $Fixture = Join-Path $CaseRoot "fixtures"
+            $Asset = "sotto-v1.2.3-x86_64-pc-windows-msvc.zip"
+            New-Fixture -Directory $Fixture -Asset $Asset
+
+            $FakeBin = Join-Path $CaseRoot "bin"
+            New-Item -ItemType Directory -Force -Path $FakeBin | Out-Null
+            Set-Content -Path (Join-Path $FakeBin "cosign.cmd") -Value $CosignScript -Encoding ascii -NoNewline
+
+            $CosignLog = Join-Path $CaseRoot "cosign.log"
+            $ExpandSentinel = Join-Path $CaseRoot "expand-called"
+            $GithubPath = Join-Path $CaseRoot "github-path"
+            $GithubOutput = Join-Path $CaseRoot "github-output"
+            $InstallDir = Join-Path $CaseRoot "sotto-bin"
+            Set-Content -Path $GithubPath -Value "path-sentinel" -NoNewline
+            Set-Content -Path $GithubOutput -Value "output-sentinel" -NoNewline
+
+            $env:PATH = "$FakeBin;$OriginalPath"
+            $env:FIXTURE_DIRECTORY = $Fixture
+            $env:COSIGN_LOG = $CosignLog
+            $env:COSIGN_FAIL_TOKEN = $FailToken
+            $env:EXPAND_SENTINEL = $ExpandSentinel
+            $env:SOTTO_VERSION = "v1.2.3"
+            $env:SOTTO_INSTALL_DIR = $InstallDir
+            $env:GITHUB_PATH = $GithubPath
+            $env:GITHUB_OUTPUT = $GithubOutput
+
+            try {
+              $Failure = $null
+              try {
+                & $Installer
+                $Failure = "installer unexpectedly succeeded"
+              } catch {
+                $Failure = $_.Exception.Message
+              }
+
+              if ($Failure -ne $ExpectedMessage) {
+                throw "$Name produced unexpected error: $Failure"
+              }
+
+              $Calls = if (Test-Path -LiteralPath $CosignLog) { @(Get-Content -LiteralPath $CosignLog) } else { @() }
+              if ($Calls.Count -ne $ExpectedCalls) {
+                throw "$Name expected $ExpectedCalls cosign call(s), got $($Calls.Count)"
+              }
+              for ($Index = 0; $Index -lt $ExpectedOrder.Count; $Index++) {
+                if ($Calls[$Index] -notlike "*$($ExpectedOrder[$Index])*") {
+                  throw "$Name verification order was unexpected: $($Calls -join ' | ')"
+                }
+              }
+              if (Test-Path -LiteralPath $ExpandSentinel) {
+                throw "$Name reached extraction before the signature guard"
+              }
+              if (Test-Path -LiteralPath $InstallDir) {
+                throw "$Name created an install directory after signature failure"
+              }
+              if ((Get-Content -Raw -LiteralPath $GithubPath) -ne "path-sentinel") {
+                throw "$Name changed GITHUB_PATH after signature failure"
+              }
+              if ((Get-Content -Raw -LiteralPath $GithubOutput) -ne "output-sentinel") {
+                throw "$Name changed GITHUB_OUTPUT after signature failure"
+              }
+            } finally {
+              $env:PATH = $OriginalPath
+            }
+          }
+
+          Invoke-InstallerCase -Name "manifest-failure" -FailToken "SHA256SUMS.sigstore.json" -ExpectedMessage "error: Sigstore verification failed for SHA256SUMS" -ExpectedCalls 1 -ExpectedOrder @("SHA256SUMS.sigstore.json")
+          Invoke-InstallerCase -Name "archive-failure" -FailToken "sotto-v1.2.3-x86_64-pc-windows-msvc.zip" -ExpectedMessage "error: Sigstore verification failed for sotto-v1.2.3-x86_64-pc-windows-msvc.zip" -ExpectedCalls 2 -ExpectedOrder @("SHA256SUMS.sigstore.json", "sotto-v1.2.3-x86_64-pc-windows-msvc.zip")
+
+          function Invoke-MutationCase {
+            param(
+              [string] $Name,
+              [string] $FailToken,
+              [int] $GuardOccurrence
+            )
+
+            $CaseRoot = Join-Path $env:RUNNER_TEMP "signature-mutation-$Name"
+            $Fixture = Join-Path $CaseRoot "fixtures"
+            $Asset = "sotto-v1.2.3-x86_64-pc-windows-msvc.zip"
+            New-Fixture -Directory $Fixture -Asset $Asset
+
+            $FakeBin = Join-Path $CaseRoot "bin"
+            New-Item -ItemType Directory -Force -Path $FakeBin | Out-Null
+            Set-Content -Path (Join-Path $FakeBin "cosign.cmd") -Value $CosignScript -Encoding ascii -NoNewline
+
+            $MutationDir = Join-Path $CaseRoot "mutated-installer"
+            New-Item -ItemType Directory -Force -Path $MutationDir | Out-Null
+            $InstallerText = Get-Content -Raw -LiteralPath $Installer
+            $Needle = 'if ($LASTEXITCODE -ne 0) {'
+            $Start = -1
+            for ($Occurrence = 1; $Occurrence -le $GuardOccurrence; $Occurrence++) {
+              $Start = $InstallerText.IndexOf($Needle, $Start + $Needle.Length)
+            }
+            if ($Start -lt 0) {
+              throw "could not find signature guard $GuardOccurrence in disposable installer copy"
+            }
+            $MutatedText = $InstallerText.Remove($Start, $Needle.Length).Insert($Start, 'if ($false) {')
+            $MutatedInstaller = Join-Path $MutationDir "install.ps1"
+            Set-Content -Path $MutatedInstaller -Value $MutatedText -NoNewline
+            Copy-Item -LiteralPath (Join-Path $Root "scripts/verify-checksum.ps1") -Destination $MutationDir
+
+            $ExpandSentinel = Join-Path $CaseRoot "expand-called"
+            $GithubPath = Join-Path $CaseRoot "github-path"
+            $GithubOutput = Join-Path $CaseRoot "github-output"
+            $InstallDir = Join-Path $CaseRoot "sotto-bin"
+            Set-Content -Path $GithubPath -Value "path-sentinel" -NoNewline
+            Set-Content -Path $GithubOutput -Value "output-sentinel" -NoNewline
+
+            $env:PATH = "$FakeBin;$OriginalPath"
+            $env:FIXTURE_DIRECTORY = $Fixture
+            $env:COSIGN_LOG = (Join-Path $CaseRoot "cosign.log")
+            $env:COSIGN_FAIL_TOKEN = $FailToken
+            $env:EXPAND_SENTINEL = $ExpandSentinel
+            $env:SOTTO_VERSION = "v1.2.3"
+            $env:SOTTO_INSTALL_DIR = $InstallDir
+            $env:GITHUB_PATH = $GithubPath
+            $env:GITHUB_OUTPUT = $GithubOutput
+
+            try {
+              $Failure = $null
+              try {
+                & $MutatedInstaller
+                $Failure = "mutated installer unexpectedly succeeded"
+              } catch {
+                $Failure = $_.Exception.Message
+              }
+              if ($Failure -ne "Expand-Archive was reached before the expected signature failure") {
+                throw "$Name mutation did not reach the extraction sentinel: $Failure"
+              }
+              if (-not (Test-Path -LiteralPath $ExpandSentinel)) {
+                throw "$Name mutation did not exercise the extraction boundary"
+              }
+            } finally {
+              $env:PATH = $OriginalPath
+            }
+          }
+
+          # These disposable mutations prove the exact signature assertions are regression guards:
+          # removing either guard reaches the extraction boundary instead of the required error.
+          Invoke-MutationCase -Name "manifest-guard" -FailToken "SHA256SUMS.sigstore.json" -GuardOccurrence 1
+          Invoke-MutationCase -Name "archive-guard" -FailToken "sotto-v1.2.3-x86_64-pc-windows-msvc.zip" -GuardOccurrence 2
+
